@@ -1,0 +1,2 @@
+user1:123456:/home/dell/Documents/Code/FTP-client-server/server/data/user1
+admin:admin123:/home/dell/Documents/Code/FTP-client-server/server/data/admin
