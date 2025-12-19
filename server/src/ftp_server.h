@@ -15,6 +15,8 @@ typedef struct {
     char current_dir[256];      // Thu muc hien tai
     char root_dir[256];         // Thu muc goc cua user
     struct sockaddr_in client_addr;  // Dia chi client
+    int data_listen_sock;       // Socket lang nghe data connection (PASV mode)
+    int data_sock;              // Socket data connection hien tai
 } FTPSession;
 
 // Ham xu ly client - vong lap chinh
@@ -28,7 +30,7 @@ void cmd_cwd(FTPSession *session, const char *arg);
 void cmd_list(FTPSession *session);
 void cmd_retr(FTPSession *session, const char *arg);
 void cmd_stor(FTPSession *session, const char *arg);
-void cmd_pasv(FTPSession *session, int *data_sock, int *pasv_port);
+void cmd_pasv(FTPSession *session);
 void cmd_type(FTPSession *session, const char *arg);
 void cmd_syst(FTPSession *session);
 void cmd_quit(FTPSession *session);

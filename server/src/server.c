@@ -1,6 +1,7 @@
 /*
  * Chay: ./server [port]
  * Mac dinh port 2121
+ * Ho tro multithread - nhieu client ket noi cung luc
  */
 
 #include <stdio.h>
@@ -10,12 +11,38 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <pthread.h>
 
 #include "account.h"
 #include "ftp_server.h"
 
 #define DEFAULT_PORT 2121
 #define ACCOUNT_FILE "./data/accounts.txt"
+
+// Struct truyen du lieu cho thread
+typedef struct {
+    int client_sock;
+    struct sockaddr_in client_addr;
+} ClientInfo;
+
+/*
+ * Ham xu ly cho moi thread client
+ */
+void *client_thread(void *arg) {
+    ClientInfo *info = (ClientInfo *)arg;
+    
+    // Xu ly client
+    handle_client(info->client_sock, info->client_addr);
+    
+    printf("Client ngat ket noi: %s:%d\n\n", 
+           inet_ntoa(info->client_addr.sin_addr), 
+           ntohs(info->client_addr.sin_port));
+    
+    // Giai phong bo nho
+    free(info);
+    
+    return NULL;
+}
 
 int main(int argc, char *argv[]) {
     // Lay port tu tham so hoac dung mac dinh
@@ -61,16 +88,17 @@ int main(int argc, char *argv[]) {
     }
     
     // Listen
-    if (listen(server_sock, 5) < 0) {
+    if (listen(server_sock, 10) < 0) {
         perror("Listen that bai");
         close(server_sock);
         return 1;
     }
     
     printf("FTP Server dang chay tren port %d\n", port);
+    printf("Ho tro nhieu client ket noi cung luc (multithread)\n");
     printf("Cho ket noi tu client...\n\n");
     
-    // Vong lap chinh - xu ly tung client (khong da luong)
+    // Vong lap chinh - tao thread moi cho moi client
     while (1) {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
@@ -86,10 +114,27 @@ int main(int argc, char *argv[]) {
                inet_ntoa(client_addr.sin_addr), 
                ntohs(client_addr.sin_port));
         
-        // Xu ly client (blocking - chi xu ly 1 client tai 1 thoi diem)
-        handle_client(client_sock, client_addr);
+        // Tao struct chua thong tin client
+        ClientInfo *info = (ClientInfo *)malloc(sizeof(ClientInfo));
+        if (info == NULL) {
+            perror("Khong the cap phat bo nho");
+            close(client_sock);
+            continue;
+        }
+        info->client_sock = client_sock;
+        info->client_addr = client_addr;
         
-        printf("Client ngat ket noi\n\n");
+        // Tao thread moi xu ly client
+        pthread_t tid;
+        if (pthread_create(&tid, NULL, client_thread, (void *)info) != 0) {
+            perror("Khong the tao thread");
+            close(client_sock);
+            free(info);
+            continue;
+        }
+        
+        // Detach thread - tu dong giai phong khi ket thuc
+        pthread_detach(tid);
     }
     
     close(server_sock);

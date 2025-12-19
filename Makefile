@@ -10,12 +10,13 @@ CLIENT_OUT = client/client
 # Target mac dinh: compile ca hai
 all: server client
 
-# Compile server
+# Compile server (them -lpthread cho multithread)
 server:
 	$(CC) $(CFLAGS) -o $(SERVER_OUT) \
 		$(SERVER_SRC)/server.c \
 		$(SERVER_SRC)/account.c \
-		$(SERVER_SRC)/ftp_server.c
+		$(SERVER_SRC)/ftp_server.c \
+		-lpthread
 
 # Compile client
 client:

@@ -12,10 +12,6 @@
 #include "ftp_server.h"
 #include "account.h"
 
-// Bien toan cuc cho passive mode
-static int data_listen_sock = -1;
-static int data_sock = -1;
-
 /*
  * In log lenh nhan duoc theo format: hh:mm:ss <Lenh> <IP>
  */
@@ -144,27 +140,27 @@ void cmd_cwd(FTPSession *session, const char *arg) {
 /*
  * Xu ly lenh PASV - thiet lap passive mode
  */
-void cmd_pasv(FTPSession *session, int *p_data_sock, int *pasv_port) {
+void cmd_pasv(FTPSession *session) {
     if (!session->logged_in) {
         send_response(session->ctrl_sock, "530 Not logged in\r\n");
         return;
     }
     
     // Dong socket cu neu co
-    if (data_listen_sock >= 0) {
-        close(data_listen_sock);
+    if (session->data_listen_sock >= 0) {
+        close(session->data_listen_sock);
     }
     
     // Tao socket moi cho data connection
-    data_listen_sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (data_listen_sock < 0) {
+    session->data_listen_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (session->data_listen_sock < 0) {
         send_response(session->ctrl_sock, "425 Can't open data connection\r\n");
         return;
     }
     
     // Cho phep reuse address
     int opt = 1;
-    setsockopt(data_listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(session->data_listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     
     // Bind vao port ngau nhien
     struct sockaddr_in data_addr;
@@ -173,19 +169,19 @@ void cmd_pasv(FTPSession *session, int *p_data_sock, int *pasv_port) {
     data_addr.sin_addr.s_addr = INADDR_ANY;
     data_addr.sin_port = 0;  // Kernel tu chon port
     
-    if (bind(data_listen_sock, (struct sockaddr*)&data_addr, sizeof(data_addr)) < 0) {
-        close(data_listen_sock);
-        data_listen_sock = -1;
+    if (bind(session->data_listen_sock, (struct sockaddr*)&data_addr, sizeof(data_addr)) < 0) {
+        close(session->data_listen_sock);
+        session->data_listen_sock = -1;
         send_response(session->ctrl_sock, "425 Can't open data connection\r\n");
         return;
     }
     
-    listen(data_listen_sock, 1);
+    listen(session->data_listen_sock, 1);
     
     // Lay port duoc gan
     socklen_t len = sizeof(data_addr);
-    getsockname(data_listen_sock, (struct sockaddr*)&data_addr, &len);
-    *pasv_port = ntohs(data_addr.sin_port);
+    getsockname(session->data_listen_sock, (struct sockaddr*)&data_addr, &len);
+    int pasv_port = ntohs(data_addr.sin_port);
     
     // Lay IP cua server (dung IP cua control socket)
     struct sockaddr_in server_addr;
@@ -198,29 +194,27 @@ void cmd_pasv(FTPSession *session, int *p_data_sock, int *pasv_port) {
     snprintf(response, sizeof(response), 
              "227 Entering Passive Mode (%d,%d,%d,%d,%d,%d)\r\n",
              ip[0], ip[1], ip[2], ip[3],
-             (*pasv_port >> 8) & 0xFF,
-             *pasv_port & 0xFF);
+             (pasv_port >> 8) & 0xFF,
+             pasv_port & 0xFF);
     
     send_response(session->ctrl_sock, response);
-    
-    *p_data_sock = data_listen_sock;
 }
 
 /*
  * Accept data connection tu client sau khi PASV
  */
-int accept_data_connection() {
-    if (data_listen_sock < 0) return -1;
+int accept_data_connection(FTPSession *session) {
+    if (session->data_listen_sock < 0) return -1;
     
     struct sockaddr_in client_addr;
     socklen_t len = sizeof(client_addr);
     
-    data_sock = accept(data_listen_sock, (struct sockaddr*)&client_addr, &len);
+    session->data_sock = accept(session->data_listen_sock, (struct sockaddr*)&client_addr, &len);
     
-    close(data_listen_sock);
-    data_listen_sock = -1;
+    close(session->data_listen_sock);
+    session->data_listen_sock = -1;
     
-    return data_sock;
+    return session->data_sock;
 }
 
 /*
@@ -233,7 +227,7 @@ void cmd_list(FTPSession *session) {
     }
     
     // Accept data connection
-    int dsock = accept_data_connection();
+    int dsock = accept_data_connection(session);
     if (dsock < 0) {
         send_response(session->ctrl_sock, "425 Can't open data connection\r\n");
         return;
@@ -249,7 +243,7 @@ void cmd_list(FTPSession *session) {
     DIR *dir = opendir(full_path);
     if (dir == NULL) {
         close(dsock);
-        data_sock = -1;
+        session->data_sock = -1;
         send_response(session->ctrl_sock, "550 Failed to open directory\r\n");
         return;
     }
@@ -298,7 +292,7 @@ void cmd_list(FTPSession *session) {
     
     closedir(dir);
     close(dsock);
-    data_sock = -1;
+    session->data_sock = -1;
     
     send_response(session->ctrl_sock, "226 Transfer complete\r\n");
 }
@@ -334,7 +328,7 @@ void cmd_retr(FTPSession *session, const char *filename) {
     }
     
     // Accept data connection
-    int dsock = accept_data_connection();
+    int dsock = accept_data_connection(session);
     if (dsock < 0) {
         fclose(fp);
         send_response(session->ctrl_sock, "425 Can't open data connection\r\n");
@@ -353,7 +347,7 @@ void cmd_retr(FTPSession *session, const char *filename) {
     
     fclose(fp);
     close(dsock);
-    data_sock = -1;
+    session->data_sock = -1;
     
     send_response(session->ctrl_sock, "226 Transfer complete\r\n");
 }
@@ -382,7 +376,7 @@ void cmd_stor(FTPSession *session, const char *filename) {
     }
     
     // Accept data connection
-    int dsock = accept_data_connection();
+    int dsock = accept_data_connection(session);
     if (dsock < 0) {
         send_response(session->ctrl_sock, "425 Can't open data connection\r\n");
         return;
@@ -392,7 +386,7 @@ void cmd_stor(FTPSession *session, const char *filename) {
     FILE *fp = fopen(filepath, "wb");
     if (fp == NULL) {
         close(dsock);
-        data_sock = -1;
+        session->data_sock = -1;
         send_response(session->ctrl_sock, "550 Cannot create file\r\n");
         return;
     }
@@ -409,7 +403,7 @@ void cmd_stor(FTPSession *session, const char *filename) {
     
     fclose(fp);
     close(dsock);
-    data_sock = -1;
+    session->data_sock = -1;
     
     send_response(session->ctrl_sock, "226 Transfer complete\r\n");
 }
@@ -458,16 +452,14 @@ void handle_client(int client_sock, struct sockaddr_in client_addr) {
     session.ctrl_sock = client_sock;
     session.client_addr = client_addr;
     session.logged_in = 0;
+    session.data_listen_sock = -1;  // Chua co data connection
+    session.data_sock = -1;
     
     // Gui welcome message
     send_response(client_sock, "220 FTP Server Ready\r\n");
     
     char buffer[CMD_SIZE];
     int running = 1;
-    
-    // Bien cho PASV mode
-    int pasv_sock = -1;
-    int pasv_port = 0;
     
     while (running) {
         memset(buffer, 0, sizeof(buffer));
@@ -507,7 +499,7 @@ void handle_client(int client_sock, struct sockaddr_in client_addr) {
             cmd_cwd(&session, "..");
         }
         else if (strcasecmp(cmd, "PASV") == 0) {
-            cmd_pasv(&session, &pasv_sock, &pasv_port);
+            cmd_pasv(&session);
         }
         else if (strcasecmp(cmd, "LIST") == 0 || strcasecmp(cmd, "NLST") == 0) {
             cmd_list(&session);
