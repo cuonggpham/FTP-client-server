@@ -6,20 +6,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "ftp_client.h"
+#include "../include/ftp_client.h"
 
 #define DEFAULT_HOST "127.0.0.1"
 #define DEFAULT_PORT 2121
 
 void print_help() {
-    printf("\n=== Cac lenh FTP ===\n");
-    printf("  PWD           - Xem thu muc hien tai\n");
-    printf("  CWD <dir>     - Doi thu muc\n");
-    printf("  LIST          - Liet ke file trong thu muc\n");
-    printf("  RETR <file>   - Download file tu server\n");
-    printf("  STOR <file>   - Upload file len server\n");
-    printf("  QUIT          - Thoat\n");
-    printf("  HELP          - Xem huong dan\n");
+    printf("\n=== FTP Commands ===\n");
+    printf("  PWD           - Print working directory\n");
+    printf("  CWD <dir>     - Change working directory\n");
+    printf("  LIST          - List files in directory\n");
+    printf("  RETR <file>   - Download file from server\n");
+    printf("  STOR <file>   - Upload file to server\n");
+    printf("  QUIT          - Exit\n");
+    printf("  HELP          - Show help\n");
     printf("====================\n\n");
 }
 
@@ -32,20 +32,20 @@ int main(int argc, char *argv[]) {
     if (argc > 2) port = atoi(argv[2]);
     
     printf("=== FTP CLIENT ===\n");
-    printf("Ket noi den %s:%d...\n", host, port);
+    printf("Connecting to %s:%d...\n", host, port);
     
     // Khoi tao va ket noi
     FTPClient client;
     memset(&client, 0, sizeof(client));
     
     if (ftp_connect(&client, host, port) < 0) {
-        printf("Khong the ket noi den server!\n");
+        printf("Cannot connect to server!\n");
         return 1;
     }
     
-    printf("Ket noi thanh cong!\n\n");
+    printf("Connection successful!\n\n");
     
-    // Dang nhap
+    // Login
     char username[50], password[50];
     
     printf("Username: ");
@@ -57,12 +57,12 @@ int main(int argc, char *argv[]) {
     password[strcspn(password, "\r\n")] = 0;
     
     if (ftp_login(&client, username, password) < 0) {
-        printf("Dang nhap that bai!\n");
+        printf("Login failed!\n");
         ftp_disconnect(&client);
         return 1;
     }
     
-    printf("Dang nhap thanh cong!\n");
+    printf("Login successful!\n");
     print_help();
     
     // Vong lap nhap lenh
@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
         // Bo ky tu xuong dong
         input[strcspn(input, "\r\n")] = 0;
         
-        // Bo qua lenh rong
+        // Skip empty command
         if (strlen(input) == 0) continue;
         
         // Tach lenh va tham so
@@ -93,7 +93,7 @@ int main(int argc, char *argv[]) {
         }
         else if (strcasecmp(cmd, "CWD") == 0 || strcasecmp(cmd, "CD") == 0) {
             if (arg == NULL) {
-                printf("Cu phap: CWD <thu_muc>\n");
+                printf("Syntax: CWD <directory>\n");
             } else {
                 ftp_cwd(&client, arg);
             }
@@ -103,14 +103,14 @@ int main(int argc, char *argv[]) {
         }
         else if (strcasecmp(cmd, "RETR") == 0 || strcasecmp(cmd, "GET") == 0) {
             if (arg == NULL) {
-                printf("Cu phap: RETR <ten_file>\n");
+                printf("Syntax: RETR <filename>\n");
             } else {
                 ftp_retr(&client, arg, NULL);
             }
         }
         else if (strcasecmp(cmd, "STOR") == 0 || strcasecmp(cmd, "PUT") == 0) {
             if (arg == NULL) {
-                printf("Cu phap: STOR <ten_file_local>\n");
+                printf("Syntax: STOR <local_filename>\n");
             } else {
                 ftp_stor(&client, arg, NULL);
             }
@@ -123,10 +123,10 @@ int main(int argc, char *argv[]) {
             print_help();
         }
         else {
-            printf("Lenh khong hop le. Go HELP de xem huong dan.\n");
+            printf("Invalid command. Type HELP to see available commands.\n");
         }
     }
     
-    printf("Da thoat!\n");
+    printf("Exited!\n");
     return 0;
 }

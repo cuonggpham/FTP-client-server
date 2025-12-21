@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "account.h"
+#include "../include/account.h"
 
 // Bien toan cuc luu danh sach tai khoan
 Account accounts[MAX_ACCOUNTS];
@@ -9,13 +9,13 @@ int account_count = 0;
 
 /*
  * Doc danh sach tai khoan tu file
- * Format moi dong: username:password:home_dir
+ * Format moi dong: username password home_dir
  * Tra ve so tai khoan doc duoc
  */
 int load_accounts(const char *filename) {
     FILE *fp = fopen(filename, "r");
     if (fp == NULL) {
-        printf("Khong the mo file tai khoan: %s\n", filename);
+        printf("Cannot open account file: %s\n", filename);
         return -1;
     }
     
@@ -29,16 +29,16 @@ int load_accounts(const char *filename) {
         // Bo qua dong trong
         if (strlen(line) == 0) continue;
         
-        // Tach chuoi theo dau :
-        char *token = strtok(line, ":");
+        // Tach chuoi theo dau cach (username password home_dir)
+        char *token = strtok(line, " ");
         if (token == NULL) continue;
         strncpy(accounts[account_count].username, token, MAX_USERNAME - 1);
         
-        token = strtok(NULL, ":");
+        token = strtok(NULL, " ");
         if (token == NULL) continue;
         strncpy(accounts[account_count].password, token, MAX_PASSWORD - 1);
         
-        token = strtok(NULL, ":");
+        token = strtok(NULL, " ");
         if (token == NULL) continue;
         strncpy(accounts[account_count].home_dir, token, MAX_PATH_LEN - 1);
         
@@ -46,7 +46,7 @@ int load_accounts(const char *filename) {
     }
     
     fclose(fp);
-    printf("Da doc %d tai khoan tu file\n", account_count);
+    printf("Loaded %d accounts from file\n", account_count);
     return account_count;
 }
 
@@ -70,14 +70,14 @@ int check_login(const char *username, const char *password) {
  */
 int add_account(const char *username, const char *password, const char *home_dir) {
     if (account_count >= MAX_ACCOUNTS) {
-        printf("Danh sach tai khoan da day!\n");
+        printf("Account list is full!\n");
         return -1;
     }
     
-    // Kiem tra trung username
+    // Check for duplicate username
     for (int i = 0; i < account_count; i++) {
         if (strcmp(accounts[i].username, username) == 0) {
-            printf("Username da ton tai!\n");
+            printf("Username already exists!\n");
             return -1;
         }
     }
@@ -96,12 +96,12 @@ int add_account(const char *username, const char *password, const char *home_dir
 int save_accounts(const char *filename) {
     FILE *fp = fopen(filename, "w");
     if (fp == NULL) {
-        printf("Khong the ghi file: %s\n", filename);
+        printf("Cannot write to file: %s\n", filename);
         return -1;
     }
     
     for (int i = 0; i < account_count; i++) {
-        fprintf(fp, "%s:%s:%s\n", 
+        fprintf(fp, "%s %s %s\n", 
                 accounts[i].username, 
                 accounts[i].password, 
                 accounts[i].home_dir);

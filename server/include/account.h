@@ -6,27 +6,27 @@
 #define MAX_PASSWORD 50
 #define MAX_PATH_LEN 256
 
-// Struct luu thong tin tai khoan
+/* Account information structure */
 typedef struct {
     char username[MAX_USERNAME];
     char password[MAX_PASSWORD];
     char home_dir[MAX_PATH_LEN];
 } Account;
 
-// Bien toan cuc luu danh sach tai khoan
+/* Global variables for account list */
 extern Account accounts[MAX_ACCOUNTS];
 extern int account_count;
 
-// Ham doc tai khoan tu file
+/* Load accounts from file */
 int load_accounts(const char *filename);
 
-// Ham kiem tra dang nhap, tra ve index neu thanh cong, -1 neu that bai
+/* Check login credentials, returns index if success, -1 if failed */
 int check_login(const char *username, const char *password);
 
-// Ham them tai khoan moi
+/* Add new account */
 int add_account(const char *username, const char *password, const char *home_dir);
 
-// Ham luu tai khoan ra file
+/* Save accounts to file */
 int save_accounts(const char *filename);
 
 #endif
