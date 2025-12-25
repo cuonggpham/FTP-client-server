@@ -17,7 +17,7 @@
 #include "../include/ftp_server.h"
 
 #define DEFAULT_PORT 2121
-#define ACCOUNT_FILE "./data/accounts.txt"
+#define ACCOUNT_FILE "./server/data/accounts.txt"
 
 // Struct to pass data to thread
 typedef struct {

@@ -125,6 +125,53 @@ FTP-client-server/
 username password /path/to/home/directory
 ```
 
+## FTP Response Codes
+
+The server uses standard FTP response codes according to RFC 959:
+
+### Positive Completion (2xx)
+
+| Code | Message | Description |
+|------|---------|-------------|
+| `200` | OK | Command executed successfully |
+| `200` | Type set to A/I | Transfer type changed |
+| `211` | End | Feature list end |
+| `215` | UNIX Type: L8 | System type response |
+| `220` | FTP Server Ready | Server greeting on connection |
+| `221` | Goodbye | Session terminated |
+| `226` | Transfer complete | Data transfer finished |
+| `227` | Entering Passive Mode | PASV mode with IP and port |
+| `230` | User logged in | Authentication successful |
+| `250` | Directory changed | CWD command successful |
+| `257` | "path" is current directory | PWD response |
+
+### Authentication (3xx)
+
+| Code | Message | Description |
+|------|---------|-------------|
+| `331` | Username OK, need password | USER accepted, awaiting PASS |
+
+### Connection Errors (4xx)
+
+| Code | Message | Description |
+|------|---------|-------------|
+| `425` | Can't open data connection | Data connection failed |
+
+### File/Action Errors (5xx)
+
+| Code | Message | Description |
+|------|---------|-------------|
+| `501` | Syntax error | Invalid command arguments |
+| `502` | Command not implemented | Unknown command |
+| `503` | Login with USER first | Command requires authentication |
+| `504` | Type not supported | Invalid transfer type |
+| `530` | Not logged in | Authentication required |
+| `530` | Login incorrect | Wrong username/password |
+| `550` | Directory not found | CWD target doesn't exist |
+| `550` | File not found | RETR target doesn't exist |
+| `550` | Cannot create file | STOR failed |
+| `550` | Failed to open directory | LIST failed |
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file.

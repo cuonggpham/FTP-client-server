@@ -10,7 +10,7 @@
 #include <sys/types.h>
 #include "../include/account.h"
 
-#define ACCOUNT_FILE "../data/accounts.txt"
+#define ACCOUNT_FILE "./server/data/accounts.txt"
 
 int main() {
     char username[MAX_USERNAME];
@@ -47,13 +47,21 @@ int main() {
     if (add_account(username, password, home_dir) == 0) {
         printf("\nAccount added successfully!\n");
         
-        // Create home directory if not exists
+        // Check home directory
         struct stat st;
-        if (stat(home_dir, &st) != 0) {
-            if (mkdir(home_dir, 0755) == 0) {
-                printf("Created directory: %s\n", home_dir);
+        if (stat(home_dir, &st) == 0) {
+            // Directory already exists
+            if (S_ISDIR(st.st_mode)) {
+                printf("Using existing directory: %s\n", home_dir);
             } else {
-                printf("Cannot create directory: %s\n", home_dir);
+                printf("Warning: %s exists but is not a directory!\n", home_dir);
+            }
+        } else {
+            // Directory doesn't exist, create it
+            if (mkdir(home_dir, 0755) == 0) {
+                printf("Created new directory: %s\n", home_dir);
+            } else {
+                printf("Cannot create directory: %s (check permissions)\n", home_dir);
             }
         }
         
