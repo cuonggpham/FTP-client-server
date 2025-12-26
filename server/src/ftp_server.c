@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <dirent.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -11,19 +12,7 @@
 
 #include "../include/ftp_server.h"
 #include "../include/account.h"
-
-/*
- * In log lenh nhan duoc theo format: hh:mm:ss <Lenh> <IP>
- */
-void log_command(const char *cmd, struct sockaddr_in *client_addr) {
-    time_t now = time(NULL);
-    struct tm *t = localtime(&now);
-    
-    printf("%02d:%02d:%02d %s %s\n", 
-           t->tm_hour, t->tm_min, t->tm_sec,
-           cmd, 
-           inet_ntoa(client_addr->sin_addr));
-}
+#include "../helpers/logger.h"
 
 /*
  * Send response to client
@@ -340,16 +329,35 @@ void cmd_retr(FTPSession *session, const char *filename) {
     // Send file
     char buffer[BUFFER_SIZE];
     size_t bytes_read;
+    int transfer_aborted = 0;
+    int io_error = 0;
     
     while ((bytes_read = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
-        send(dsock, buffer, bytes_read, 0);
+        ssize_t sent = send(dsock, buffer, bytes_read, 0);
+        if (sent <= 0) {
+            // Client closed connection or network error
+            transfer_aborted = 1;
+            break;
+        }
+    }
+    
+    // Check if fread encountered an error (not EOF)
+    if (ferror(fp)) {
+        io_error = 1;
     }
     
     fclose(fp);
     close(dsock);
     session->data_sock = -1;
     
-    send_response(session->ctrl_sock, "226 Transfer complete\r\n");
+    // Send appropriate response based on transfer result
+    if (transfer_aborted) {
+        send_response(session->ctrl_sock, "426 Connection closed; transfer aborted\r\n");
+    } else if (io_error) {
+        send_response(session->ctrl_sock, "450 Requested file action not taken\r\n");
+    } else {
+        send_response(session->ctrl_sock, "226 Transfer complete\r\n");
+    }
 }
 
 /*
@@ -387,7 +395,13 @@ void cmd_stor(FTPSession *session, const char *filename) {
     if (fp == NULL) {
         close(dsock);
         session->data_sock = -1;
-        send_response(session->ctrl_sock, "550 Cannot create file\r\n");
+        
+        // Distinguish between permission denied and file not found
+        if (errno == EACCES || errno == EPERM) {
+            send_response(session->ctrl_sock, "450 Requested file action not taken\r\n");
+        } else {
+            send_response(session->ctrl_sock, "550 Cannot create file\r\n");
+        }
         return;
     }
     
@@ -396,16 +410,39 @@ void cmd_stor(FTPSession *session, const char *filename) {
     // Receive file
     char buffer[BUFFER_SIZE];
     ssize_t bytes_recv;
+    int transfer_aborted = 0;
+    int io_error = 0;
     
     while ((bytes_recv = recv(dsock, buffer, sizeof(buffer), 0)) > 0) {
-        fwrite(buffer, 1, bytes_recv, fp);
+        size_t written = fwrite(buffer, 1, bytes_recv, fp);
+        if (written < (size_t)bytes_recv) {
+            // Disk full or I/O error
+            io_error = 1;
+            break;
+        }
+    }
+    
+    // Check if recv encountered an error (not EOF)
+    if (bytes_recv < 0) {
+        transfer_aborted = 1;
     }
     
     fclose(fp);
     close(dsock);
     session->data_sock = -1;
     
-    send_response(session->ctrl_sock, "226 Transfer complete\r\n");
+    // Send appropriate response based on transfer result
+    if (transfer_aborted) {
+        send_response(session->ctrl_sock, "426 Connection closed; transfer aborted\r\n");
+        // Delete incomplete file
+        unlink(filepath);
+    } else if (io_error) {
+        send_response(session->ctrl_sock, "450 Requested file action not taken\r\n");
+        // Delete incomplete file
+        unlink(filepath);
+    } else {
+        send_response(session->ctrl_sock, "226 Transfer complete\r\n");
+    }
 }
 
 /*
@@ -445,10 +482,11 @@ void cmd_quit(FTPSession *session) {
  * Main handler for each client
  * Loop to receive and process commands
  */
-void handle_client(int client_sock, struct sockaddr_in client_addr) {
+void handle_client(int client_sock, struct sockaddr_in client_addr, int session_id) {
     // Initialize session
     FTPSession session;
     memset(&session, 0, sizeof(session));
+    session.session_id = session_id;
     session.ctrl_sock = client_sock;
     session.client_addr = client_addr;
     session.logged_in = 0;
@@ -474,7 +512,7 @@ void handle_client(int client_sock, struct sockaddr_in client_addr) {
         buffer[strcspn(buffer, "\r\n")] = 0;
         
         // Log command
-        log_command(buffer, &client_addr);
+        log_command(session.session_id, buffer, inet_ntoa(client_addr.sin_addr));
         
         // Split command and argument
         char *cmd = strtok(buffer, " ");

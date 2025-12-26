@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -15,14 +16,28 @@
 
 #include "../include/account.h"
 #include "../include/ftp_server.h"
+#include "../helpers/logger.h"
 
 #define DEFAULT_PORT 2121
 #define ACCOUNT_FILE "./server/data/accounts.txt"
+
+// Global session counter (thread-safe)
+static int next_session_id = 0;
+static pthread_mutex_t session_id_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Generate unique session ID
+static int get_next_session_id(void) {
+    pthread_mutex_lock(&session_id_mutex);
+    int id = ++next_session_id;
+    pthread_mutex_unlock(&session_id_mutex);
+    return id;
+}
 
 // Struct to pass data to thread
 typedef struct {
     int client_sock;
     struct sockaddr_in client_addr;
+    int session_id;
 } ClientInfo;
 
 /*
@@ -32,9 +47,10 @@ void *client_thread(void *arg) {
     ClientInfo *info = (ClientInfo *)arg;
     
     // Handle client
-    handle_client(info->client_sock, info->client_addr);
+    handle_client(info->client_sock, info->client_addr, info->session_id);
     
-    printf("Client disconnected: %s:%d\n\n", 
+    log_info("[S:%d] Client disconnected: %s:%d", 
+           info->session_id,
            inet_ntoa(info->client_addr.sin_addr), 
            ntohs(info->client_addr.sin_port));
     
@@ -51,12 +67,18 @@ int main(int argc, char *argv[]) {
         port = atoi(argv[1]);
     }
     
+    // Initialize logger
+    if (init_logger() < 0) {
+        fprintf(stderr, "Failed to initialize logger\n");
+        return 1;
+    }
+    
     // Read account list
-    printf("=== FTP SERVER ===\n");
-    printf("Loading account file...\n");
+    log_info("=== FTP SERVER ===");
+    log_info("Loading account file...");
     
     if (load_accounts(ACCOUNT_FILE) < 0) {
-        printf("Cannot load account file, creating new file...\n");
+        log_info("Cannot load account file, creating new file...");
         // Add default account
         add_account("user1", "123456", "./data/user1");
         save_accounts(ACCOUNT_FILE);
@@ -65,7 +87,8 @@ int main(int argc, char *argv[]) {
     // Create socket
     int server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (server_sock < 0) {
-        perror("Cannot create socket");
+        log_error("Cannot create socket: %s", strerror(errno));
+        close_logger();
         return 1;
     }
     
@@ -82,20 +105,23 @@ int main(int argc, char *argv[]) {
     
     // Bind socket
     if (bind(server_sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Bind failed");
+        log_error("Bind failed: %s", strerror(errno));
         close(server_sock);
+        close_logger();
         return 1;
     }
     
     // Listen
     if (listen(server_sock, 10) < 0) {
-        perror("Listen failed");
+        log_error("Listen failed: %s", strerror(errno));
         close(server_sock);
+        close_logger();
         return 1;
     }
     
-    printf("FTP Server running on port %d\n", port);
-    printf("Waiting for client connections...\n\n");
+    log_info("FTP Server running on port %d", port);
+    log_info("Waiting for client connections...");
+    printf("FTP Server running on port %d - Logs: %s\n", port, "./server/logs/");
     
     // Main loop - create new thread for each client
     while (1) {
@@ -105,28 +131,33 @@ int main(int argc, char *argv[]) {
         // Accept new connection
         int client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &client_len);
         if (client_sock < 0) {
-            perror("Accept failed");
+            log_error("Accept failed: %s", strerror(errno));
             continue;
         }
         
-        printf("Client connected: %s:%d\n", 
+        // Generate unique session ID
+        int session_id = get_next_session_id();
+        
+        log_info("[S:%d] Client connected: %s:%d", 
+               session_id,
                inet_ntoa(client_addr.sin_addr), 
                ntohs(client_addr.sin_port));
         
         // Create struct to hold client info
         ClientInfo *info = (ClientInfo *)malloc(sizeof(ClientInfo));
         if (info == NULL) {
-            perror("Cannot allocate memory");
+            log_error("Cannot allocate memory: %s", strerror(errno));
             close(client_sock);
             continue;
         }
         info->client_sock = client_sock;
         info->client_addr = client_addr;
+        info->session_id = session_id;
         
         // Create new thread to handle client
         pthread_t tid;
         if (pthread_create(&tid, NULL, client_thread, (void *)info) != 0) {
-            perror("Cannot create thread");
+            log_error("Cannot create thread: %s", strerror(errno));
             close(client_sock);
             free(info);
             continue;
@@ -137,5 +168,6 @@ int main(int argc, char *argv[]) {
     }
     
     close(server_sock);
+    close_logger();
     return 0;
 }

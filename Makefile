@@ -41,6 +41,7 @@ server: dirs
 		$(SERVER_SRC)/server.c \
 		$(SERVER_SRC)/account.c \
 		$(SERVER_SRC)/ftp_server.c \
+		server/helpers/logger.c \
 		$(LDFLAGS)
 	@echo "Built: $(SERVER_BIN)"
 

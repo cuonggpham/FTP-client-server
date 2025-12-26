@@ -8,6 +8,7 @@
 
 /* FTP session state structure */
 typedef struct {
+    int session_id;             /* Unique session identifier */
     int ctrl_sock;              /* Control socket */
     int logged_in;              /* Login status flag */
     int account_index;          /* Index of account in accounts array */
@@ -20,7 +21,7 @@ typedef struct {
 } FTPSession;
 
 /* Main client handler - main loop */
-void handle_client(int client_sock, struct sockaddr_in client_addr);
+void handle_client(int client_sock, struct sockaddr_in client_addr, int session_id);
 
 /* FTP command handlers */
 void cmd_user(FTPSession *session, const char *arg);
@@ -37,8 +38,5 @@ void cmd_quit(FTPSession *session);
 
 /* Send response to client */
 void send_response(int sock, const char *msg);
-
-/* Log received command */
-void log_command(const char *cmd, struct sockaddr_in *client_addr);
 
 #endif
