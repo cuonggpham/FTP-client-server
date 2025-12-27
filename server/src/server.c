@@ -1,7 +1,6 @@
 /*
  * chay: ./server [port]
  * cong mac dinh 2121
- * ho tro da luong - nhieu client ket noi dong thoi
  */
 
 #include <stdio.h>
@@ -54,10 +53,7 @@ void *client_thread(void *arg) {
            info->session_id,
            inet_ntoa(info->client_addr.sin_addr), 
            ntohs(info->client_addr.sin_port));
-    
-    // giai phong bo nho
     free(info);
-    
     return NULL;
 }
 
