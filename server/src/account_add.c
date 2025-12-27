@@ -1,6 +1,6 @@
 /*
- * Program to add new FTP account
- * Run: ./account_add
+ * chuong trinh them tai khoan FTP moi
+ * chay: ./account_add
  */
 
 #include <stdio.h>
@@ -17,11 +17,11 @@ int main() {
     char password[MAX_PASSWORD];
     char home_dir[MAX_PATH_LEN];
     
-    // Read current account list
+    // doc danh sach tai khoan hien tai
     load_accounts(ACCOUNT_FILE);
     printf("\nCurrently %d accounts in the system.\n\n", account_count);
     
-    // Enter new account information
+    // nhap thong tin tai khoan moi
     printf("=== ADD NEW ACCOUNT ===\n");
     
     printf("Username: ");
@@ -36,28 +36,28 @@ int main() {
     fgets(home_dir, sizeof(home_dir), stdin);
     home_dir[strcspn(home_dir, "\r\n")] = 0;
     
-    // If empty, create default path
+    // neu trong, tao duong dan mac dinh
     if (strlen(home_dir) == 0) {
         snprintf(home_dir, sizeof(home_dir), 
                  "/home/dell/Documents/Code/FTP-client-server/server/data/%s", 
                  username);
     }
     
-    // Add account
+    // them tai khoan
     if (add_account(username, password, home_dir) == 0) {
         printf("\nAccount added successfully!\n");
         
-        // Check home directory
+        // kiem tra thu muc home
         struct stat st;
         if (stat(home_dir, &st) == 0) {
-            // Directory already exists
+            // thu muc da ton tai
             if (S_ISDIR(st.st_mode)) {
                 printf("Using existing directory: %s\n", home_dir);
             } else {
                 printf("Warning: %s exists but is not a directory!\n", home_dir);
             }
         } else {
-            // Directory doesn't exist, create it
+            // thu muc chua ton tai, tao moi
             if (mkdir(home_dir, 0755) == 0) {
                 printf("Created new directory: %s\n", home_dir);
             } else {
@@ -65,7 +65,7 @@ int main() {
             }
         }
         
-        // Save to file
+        // luu vao file
         if (save_accounts(ACCOUNT_FILE) == 0) {
             printf("Saved to file: %s\n", ACCOUNT_FILE);
         }

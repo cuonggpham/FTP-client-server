@@ -1,7 +1,7 @@
 /*
- * Run: ./server [port]
- * Default port 2121
- * Supports multithread - multiple clients connected simultaneously
+ * chay: ./server [port]
+ * cong mac dinh 2121
+ * ho tro da luong - nhieu client ket noi dong thoi
  */
 
 #include <stdio.h>
@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -21,11 +22,11 @@
 #define DEFAULT_PORT 2121
 #define ACCOUNT_FILE "./server/data/accounts.txt"
 
-// Global session counter (thread-safe)
+// bo dem phien toan cuc (an toan cho da luong)
 static int next_session_id = 0;
 static pthread_mutex_t session_id_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Generate unique session ID
+// tao session id duy nhat
 static int get_next_session_id(void) {
     pthread_mutex_lock(&session_id_mutex);
     int id = ++next_session_id;
@@ -33,7 +34,7 @@ static int get_next_session_id(void) {
     return id;
 }
 
-// Struct to pass data to thread
+// cau truc de truyen du lieu cho thread
 typedef struct {
     int client_sock;
     struct sockaddr_in client_addr;
@@ -41,50 +42,50 @@ typedef struct {
 } ClientInfo;
 
 /*
- * Handler function for each client thread
+ * ham xu ly cho moi thread client
  */
 void *client_thread(void *arg) {
     ClientInfo *info = (ClientInfo *)arg;
     
-    // Handle client
+    // xu ly client
     handle_client(info->client_sock, info->client_addr, info->session_id);
     
-    log_info("[S:%d] Client disconnected: %s:%d", 
+    log_info("[SID=%d] Client disconnected: %s:%d", 
            info->session_id,
            inet_ntoa(info->client_addr.sin_addr), 
            ntohs(info->client_addr.sin_port));
     
-    // Free memory
+    // giai phong bo nho
     free(info);
     
     return NULL;
 }
 
 int main(int argc, char *argv[]) {
-    // Get port from argument or use default
+    // lay port tu tham so hoac dung mac dinh
     int port = DEFAULT_PORT;
     if (argc > 1) {
         port = atoi(argv[1]);
     }
     
-    // Initialize logger
+    // khoi tao logger
     if (init_logger() < 0) {
         fprintf(stderr, "Failed to initialize logger\n");
         return 1;
     }
     
-    // Read account list
+    // doc danh sach tai khoan
     log_info("=== FTP SERVER ===");
     log_info("Loading account file...");
     
     if (load_accounts(ACCOUNT_FILE) < 0) {
         log_info("Cannot load account file, creating new file...");
-        // Add default account
+        // them tai khoan mac dinh
         add_account("user1", "123456", "./data/user1");
         save_accounts(ACCOUNT_FILE);
     }
     
-    // Create socket
+    // tao socket
     int server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (server_sock < 0) {
         log_error("Cannot create socket: %s", strerror(errno));
@@ -92,18 +93,18 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    // Allow address reuse
+    // cho phep tai su dung dia chi
     int opt = 1;
     setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     
-    // Setup server address
+    // thiet lap dia chi server
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(port);
     
-    // Bind socket
+    // bind socket
     if (bind(server_sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         log_error("Bind failed: %s", strerror(errno));
         close(server_sock);
@@ -111,7 +112,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    // Listen
+    // lang nghe
     if (listen(server_sock, 10) < 0) {
         log_error("Listen failed: %s", strerror(errno));
         close(server_sock);
@@ -123,27 +124,27 @@ int main(int argc, char *argv[]) {
     log_info("Waiting for client connections...");
     printf("FTP Server running on port %d - Logs: %s\n", port, "./server/logs/");
     
-    // Main loop - create new thread for each client
+    // vong lap chinh - tao thread moi cho moi client
     while (1) {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
         
-        // Accept new connection
+        // chap nhan ket noi moi
         int client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &client_len);
         if (client_sock < 0) {
             log_error("Accept failed: %s", strerror(errno));
             continue;
         }
         
-        // Generate unique session ID
+        // tao session id duy nhat
         int session_id = get_next_session_id();
         
-        log_info("[S:%d] Client connected: %s:%d", 
+        log_info("[SID=%d] Client connected: %s:%d", 
                session_id,
                inet_ntoa(client_addr.sin_addr), 
                ntohs(client_addr.sin_port));
         
-        // Create struct to hold client info
+        // tao cau truc de luu thong tin client
         ClientInfo *info = (ClientInfo *)malloc(sizeof(ClientInfo));
         if (info == NULL) {
             log_error("Cannot allocate memory: %s", strerror(errno));
@@ -154,7 +155,7 @@ int main(int argc, char *argv[]) {
         info->client_addr = client_addr;
         info->session_id = session_id;
         
-        // Create new thread to handle client
+        // tao thread moi de xu ly client
         pthread_t tid;
         if (pthread_create(&tid, NULL, client_thread, (void *)info) != 0) {
             log_error("Cannot create thread: %s", strerror(errno));
@@ -163,7 +164,7 @@ int main(int argc, char *argv[]) {
             continue;
         }
         
-        // Detach thread - automatically free when finished
+        // tach thread - tu dong giai phong khi ket thuc
         pthread_detach(tid);
     }
     

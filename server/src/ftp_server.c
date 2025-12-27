@@ -15,7 +15,7 @@
 #include "../helpers/logger.h"
 
 /*
- * Send response to client
+ * gui phan hoi den client
  */
 void send_response(int sock, const char *msg) {
     send(sock, msg, strlen(msg), 0);
@@ -60,7 +60,7 @@ void cmd_pass(FTPSession *session, const char *arg) {
 }
 
 /*
- * Handle PWD command - return current directory
+ * xu ly lenh PWD - tra ve thu muc hien tai
  */
 void cmd_pwd(FTPSession *session) {
     if (!session->logged_in) {
@@ -75,7 +75,7 @@ void cmd_pwd(FTPSession *session) {
 }
 
 /*
- * Handle CWD command - change directory
+ * xu ly lenh CWD - thay doi thu muc
  */
 void cmd_cwd(FTPSession *session, const char *arg) {
     if (!session->logged_in) {
@@ -88,14 +88,20 @@ void cmd_cwd(FTPSession *session, const char *arg) {
         return;
     }
     
+    // khong cho phep di len thu muc cha khi dang o root
+    if (strcmp(arg, "..") == 0 && strcmp(session->current_dir, "/") == 0) {
+        send_response(session->ctrl_sock, "550 Permission denied\r\n");
+        return;
+    }
+    
     char new_path[MAX_PATH_LEN];
     char full_path[MAX_PATH_LEN];
     
-    // Handle absolute or relative path
+    // xu ly duong dan tuyet doi hoac tuong doi
     if (arg[0] == '/') {
         strncpy(new_path, arg, sizeof(new_path) - 1);
     } else if (strcmp(arg, "..") == 0) {
-        // Go to parent directory
+        // di len thu muc cha
         strncpy(new_path, session->current_dir, sizeof(new_path) - 1);
         char *last_slash = strrchr(new_path, '/');
         if (last_slash != NULL && last_slash != new_path) {
@@ -104,7 +110,7 @@ void cmd_cwd(FTPSession *session, const char *arg) {
             strcpy(new_path, "/");
         }
     } else {
-        // Relative path
+        // duong dan tuong doi
         if (strcmp(session->current_dir, "/") == 0) {
             snprintf(new_path, sizeof(new_path), "/%s", arg);
         } else {
@@ -112,11 +118,11 @@ void cmd_cwd(FTPSession *session, const char *arg) {
         }
     }
     
-    // Check not escaping root directory
-    // Create actual system path
+    // kiem tra khong thoat khoi thu muc goc
+    // tao duong dan thuc te tren he thong
     snprintf(full_path, sizeof(full_path), "%s%s", session->root_dir, new_path);
     
-    // Check directory exists
+    // kiem tra thu muc ton tai
     struct stat st;
     if (stat(full_path, &st) == 0 && S_ISDIR(st.st_mode)) {
         strncpy(session->current_dir, new_path, sizeof(session->current_dir) - 1);
@@ -127,7 +133,7 @@ void cmd_cwd(FTPSession *session, const char *arg) {
 }
 
 /*
- * Handle PASV command - setup passive mode
+ * xu ly lenh PASV - thiet lap che do thu dong
  */
 void cmd_pasv(FTPSession *session) {
     if (!session->logged_in) {
@@ -135,23 +141,23 @@ void cmd_pasv(FTPSession *session) {
         return;
     }
     
-    // Close existing socket if any
+    // dong socket hien tai neu co
     if (session->data_listen_sock >= 0) {
         close(session->data_listen_sock);
     }
     
-    // Create new socket for data connection
+    // tao socket moi cho ket noi du lieu
     session->data_listen_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (session->data_listen_sock < 0) {
         send_response(session->ctrl_sock, "425 Can't open data connection\r\n");
         return;
     }
     
-    // Allow address reuse
+    // cho phep tai su dung dia chi
     int opt = 1;
     setsockopt(session->data_listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     
-    // Bind to random port
+    // bind vao cong ngau nhien
     struct sockaddr_in data_addr;
     memset(&data_addr, 0, sizeof(data_addr));
     data_addr.sin_family = AF_INET;
@@ -167,18 +173,18 @@ void cmd_pasv(FTPSession *session) {
     
     listen(session->data_listen_sock, 1);
     
-    // Get assigned port
+    // lay port duoc gan
     socklen_t len = sizeof(data_addr);
     getsockname(session->data_listen_sock, (struct sockaddr*)&data_addr, &len);
     int pasv_port = ntohs(data_addr.sin_port);
     
-    // Get server IP (using control socket IP)
+    // lay IP may chu (su dung IP cua socket dieu khien)
     struct sockaddr_in server_addr;
     len = sizeof(server_addr);
     getsockname(session->ctrl_sock, (struct sockaddr*)&server_addr, &len);
     unsigned char *ip = (unsigned char*)&server_addr.sin_addr.s_addr;
     
-    // Reply to client: 227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)
+    // tra loi client: 227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)
     char response[100];
     snprintf(response, sizeof(response), 
              "227 Entering Passive Mode (%d,%d,%d,%d,%d,%d)\r\n",
@@ -190,7 +196,7 @@ void cmd_pasv(FTPSession *session) {
 }
 
 /*
- * Accept data connection from client after PASV
+ * chap nhan ket noi du lieu tu client sau PASV
  */
 int accept_data_connection(FTPSession *session) {
     if (session->data_listen_sock < 0) return -1;
@@ -207,7 +213,7 @@ int accept_data_connection(FTPSession *session) {
 }
 
 /*
- * Handle LIST command - list files in current directory
+ * xu ly lenh LIST - liet ke tap tin trong thu muc hien tai
  */
 void cmd_list(FTPSession *session) {
     if (!session->logged_in) {
@@ -215,7 +221,7 @@ void cmd_list(FTPSession *session) {
         return;
     }
     
-    // Accept data connection
+    // chap nhan ket noi du lieu
     int dsock = accept_data_connection(session);
     if (dsock < 0) {
         send_response(session->ctrl_sock, "425 Can't open data connection\r\n");
@@ -224,11 +230,11 @@ void cmd_list(FTPSession *session) {
     
     send_response(session->ctrl_sock, "150 Opening data connection\r\n");
     
-    // Create actual path
+    // tao duong dan thuc te
     char full_path[MAX_PATH_LEN];
     snprintf(full_path, sizeof(full_path), "%s%s", session->root_dir, session->current_dir);
     
-    // Open directory and read contents
+    // mo thu muc va doc noi dung
     DIR *dir = opendir(full_path);
     if (dir == NULL) {
         close(dsock);
@@ -243,7 +249,7 @@ void cmd_list(FTPSession *session) {
     char filepath[MAX_PATH_LEN];
     
     while ((entry = readdir(dir)) != NULL) {
-        // Skip . and ..
+        // bo qua . va ..
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
@@ -251,7 +257,7 @@ void cmd_list(FTPSession *session) {
         snprintf(filepath, sizeof(filepath), "%s/%s", full_path, entry->d_name);
         
         if (stat(filepath, &st) == 0) {
-            // Format like ls -l
+            // dinh dang giong ls -l
             char perms[11] = "----------";
             perms[0] = S_ISDIR(st.st_mode) ? 'd' : '-';
             perms[1] = (st.st_mode & S_IRUSR) ? 'r' : '-';
@@ -287,7 +293,7 @@ void cmd_list(FTPSession *session) {
 }
 
 /*
- * Handle RETR command - download file from server
+ * xu ly lenh RETR - tai tap tin tu may chu
  */
 void cmd_retr(FTPSession *session, const char *filename) {
     if (!session->logged_in) {
@@ -300,7 +306,7 @@ void cmd_retr(FTPSession *session, const char *filename) {
         return;
     }
     
-    // Create full path
+    // tao duong dan day du
     char filepath[MAX_PATH_LEN];
     if (filename[0] == '/') {
         snprintf(filepath, sizeof(filepath), "%s%s", session->root_dir, filename);
@@ -309,14 +315,14 @@ void cmd_retr(FTPSession *session, const char *filename) {
                  session->root_dir, session->current_dir, filename);
     }
     
-    // Open file
+    // mo tap tin
     FILE *fp = fopen(filepath, "rb");
     if (fp == NULL) {
         send_response(session->ctrl_sock, "550 File not found\r\n");
         return;
     }
     
-    // Accept data connection
+    // chap nhan ket noi du lieu
     int dsock = accept_data_connection(session);
     if (dsock < 0) {
         fclose(fp);
@@ -326,7 +332,7 @@ void cmd_retr(FTPSession *session, const char *filename) {
     
     send_response(session->ctrl_sock, "150 Opening data connection\r\n");
     
-    // Send file
+    // gui tap tin
     char buffer[BUFFER_SIZE];
     size_t bytes_read;
     int transfer_aborted = 0;
@@ -335,13 +341,13 @@ void cmd_retr(FTPSession *session, const char *filename) {
     while ((bytes_read = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
         ssize_t sent = send(dsock, buffer, bytes_read, 0);
         if (sent <= 0) {
-            // Client closed connection or network error
+            // client dong ket noi hoac loi mang
             transfer_aborted = 1;
             break;
         }
     }
     
-    // Check if fread encountered an error (not EOF)
+    // kiem tra fread co gap loi khong (khong phai EOF)
     if (ferror(fp)) {
         io_error = 1;
     }
@@ -350,7 +356,7 @@ void cmd_retr(FTPSession *session, const char *filename) {
     close(dsock);
     session->data_sock = -1;
     
-    // Send appropriate response based on transfer result
+    // gui phan hoi phu hop dua tren ket qua truyen
     if (transfer_aborted) {
         send_response(session->ctrl_sock, "426 Connection closed; transfer aborted\r\n");
     } else if (io_error) {
@@ -361,7 +367,7 @@ void cmd_retr(FTPSession *session, const char *filename) {
 }
 
 /*
- * Handle STOR command - upload file to server
+ * xu ly lenh STOR - tai tap tin len may chu
  */
 void cmd_stor(FTPSession *session, const char *filename) {
     if (!session->logged_in) {
@@ -374,7 +380,7 @@ void cmd_stor(FTPSession *session, const char *filename) {
         return;
     }
     
-    // Create full path
+    // tao duong dan day du
     char filepath[MAX_PATH_LEN];
     if (filename[0] == '/') {
         snprintf(filepath, sizeof(filepath), "%s%s", session->root_dir, filename);
@@ -383,20 +389,20 @@ void cmd_stor(FTPSession *session, const char *filename) {
                  session->root_dir, session->current_dir, filename);
     }
     
-    // Accept data connection
+    // chap nhan ket noi du lieu
     int dsock = accept_data_connection(session);
     if (dsock < 0) {
         send_response(session->ctrl_sock, "425 Can't open data connection\r\n");
         return;
     }
     
-    // Open file for writing
+    // mo tap tin de ghi
     FILE *fp = fopen(filepath, "wb");
     if (fp == NULL) {
         close(dsock);
         session->data_sock = -1;
         
-        // Distinguish between permission denied and file not found
+        // phan biet giua tu choi quyen va khong tim thay tap tin
         if (errno == EACCES || errno == EPERM) {
             send_response(session->ctrl_sock, "450 Requested file action not taken\r\n");
         } else {
@@ -407,7 +413,7 @@ void cmd_stor(FTPSession *session, const char *filename) {
     
     send_response(session->ctrl_sock, "150 Opening data connection\r\n");
     
-    // Receive file
+    // nhan tap tin
     char buffer[BUFFER_SIZE];
     ssize_t bytes_recv;
     int transfer_aborted = 0;
@@ -416,13 +422,13 @@ void cmd_stor(FTPSession *session, const char *filename) {
     while ((bytes_recv = recv(dsock, buffer, sizeof(buffer), 0)) > 0) {
         size_t written = fwrite(buffer, 1, bytes_recv, fp);
         if (written < (size_t)bytes_recv) {
-            // Disk full or I/O error
+            // dia day hoac loi I/O
             io_error = 1;
             break;
         }
     }
     
-    // Check if recv encountered an error (not EOF)
+    // kiem tra recv co gap loi khong (khong phai EOF)
     if (bytes_recv < 0) {
         transfer_aborted = 1;
     }
@@ -431,10 +437,10 @@ void cmd_stor(FTPSession *session, const char *filename) {
     close(dsock);
     session->data_sock = -1;
     
-    // Send appropriate response based on transfer result
+    // gui phan hoi phu hop dua tren ket qua truyen
     if (transfer_aborted) {
         send_response(session->ctrl_sock, "426 Connection closed; transfer aborted\r\n");
-        // Delete incomplete file
+        // xoa tap tin khong hoan chinh
         unlink(filepath);
     } else if (io_error) {
         send_response(session->ctrl_sock, "450 Requested file action not taken\r\n");
@@ -446,7 +452,7 @@ void cmd_stor(FTPSession *session, const char *filename) {
 }
 
 /*
- * Handle TYPE command - set transfer mode
+ * xu ly lenh TYPE - dat che do truyen
  */
 void cmd_type(FTPSession *session, const char *arg) {
     if (!session->logged_in) {
@@ -454,7 +460,7 @@ void cmd_type(FTPSession *session, const char *arg) {
         return;
     }
     
-    // Accept both ASCII and Binary mode
+    // chap nhan ca che do ASCII va Binary
     if (arg && (arg[0] == 'A' || arg[0] == 'a')) {
         send_response(session->ctrl_sock, "200 Type set to A\r\n");
     } else if (arg && (arg[0] == 'I' || arg[0] == 'i')) {
@@ -465,35 +471,35 @@ void cmd_type(FTPSession *session, const char *arg) {
 }
 
 /*
- * Handle SYST command - return system information
+ * xu ly lenh SYST - tra ve thong tin he thong
  */
 void cmd_syst(FTPSession *session) {
     send_response(session->ctrl_sock, "215 UNIX Type: L8\r\n");
 }
 
 /*
- * Handle QUIT command - disconnect
+ * xu ly lenh QUIT - ngat ket noi
  */
 void cmd_quit(FTPSession *session) {
     send_response(session->ctrl_sock, "221 Goodbye\r\n");
 }
 
 /*
- * Main handler for each client
- * Loop to receive and process commands
+ * ham xu ly chinh cho moi client
+ * vong lap nhan va xu ly lenh
  */
 void handle_client(int client_sock, struct sockaddr_in client_addr, int session_id) {
-    // Initialize session
+    // khoi tao phien
     FTPSession session;
     memset(&session, 0, sizeof(session));
     session.session_id = session_id;
     session.ctrl_sock = client_sock;
     session.client_addr = client_addr;
     session.logged_in = 0;
-    session.data_listen_sock = -1;  // No data connection yet
+    session.data_listen_sock = -1;  // chua co ket noi du lieu
     session.data_sock = -1;
     
-    // Send welcome message
+    // gui thong diep chao mung
     send_response(client_sock, "220 FTP Server Ready\r\n");
     
     char buffer[CMD_SIZE];
@@ -502,25 +508,25 @@ void handle_client(int client_sock, struct sockaddr_in client_addr, int session_
     while (running) {
         memset(buffer, 0, sizeof(buffer));
         
-        // Receive command from client
+        // nhan lenh tu client
         int bytes = recv(client_sock, buffer, sizeof(buffer) - 1, 0);
         if (bytes <= 0) {
-            break;  // Client closed connection
+            break;  // client dong ket noi
         }
         
-        // Remove newline character
+        // xoa ky tu xuong dong
         buffer[strcspn(buffer, "\r\n")] = 0;
         
-        // Log command
+        // ghi log lenh
         log_command(session.session_id, buffer, inet_ntoa(client_addr.sin_addr));
         
-        // Split command and argument
+        // tach lenh va tham so
         char *cmd = strtok(buffer, " ");
         char *arg = strtok(NULL, "");
         
         if (cmd == NULL) continue;
         
-        // Handle each command
+        // xu ly tung lenh
         if (strcasecmp(cmd, "USER") == 0) {
             cmd_user(&session, arg);
         } 
@@ -555,7 +561,7 @@ void handle_client(int client_sock, struct sockaddr_in client_addr, int session_
             cmd_syst(&session);
         }
         else if (strcasecmp(cmd, "FEAT") == 0) {
-            // Return empty features list
+            // tra ve danh sach tinh nang trong
             send_response(client_sock, "211 End\r\n");
         }
         else if (strcasecmp(cmd, "NOOP") == 0) {
@@ -570,6 +576,6 @@ void handle_client(int client_sock, struct sockaddr_in client_addr, int session_
         }
     }
     
-    // Close connection
+    // dong ket noi
     close(client_sock);
 }

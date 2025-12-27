@@ -15,7 +15,7 @@ static FILE *log_file = NULL;
 static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /*
- * Get current timestamp string
+ * lay chuoi thoi gian hien tai
  */
 static void get_timestamp(char *buffer, size_t size) {
     time_t now = time(NULL);
@@ -26,7 +26,7 @@ static void get_timestamp(char *buffer, size_t size) {
 }
 
 /*
- * Get log level string
+ * lay chuoi muc log
  */
 static const char* get_level_string(LogLevel level) {
     switch (level) {
@@ -38,10 +38,10 @@ static const char* get_level_string(LogLevel level) {
 }
 
 /*
- * Initialize the logger
+ * khoi tao logger
  */
 int init_logger(void) {
-    // Create log directory if it doesn't exist
+    // tao thu muc log neu chua ton tai
     struct stat st = {0};
     if (stat(LOG_DIR, &st) == -1) {
         if (mkdir(LOG_DIR, 0755) != 0) {
@@ -50,7 +50,7 @@ int init_logger(void) {
         }
     }
     
-    // Create log filename with current date
+    // tao ten file log voi ngay hien tai
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     char log_filename[256];
@@ -58,7 +58,7 @@ int init_logger(void) {
              "%s/server_%04d-%02d-%02d.log",
              LOG_DIR, t->tm_year + 1900, t->tm_mon + 1, t->tm_mday);
     
-    // Open log file in append mode
+    // mo file log o che do them vao cuoi
     pthread_mutex_lock(&log_mutex);
     log_file = fopen(log_filename, "a");
     pthread_mutex_unlock(&log_mutex);
@@ -68,14 +68,14 @@ int init_logger(void) {
         return -1;
     }
     
-    // Log initialization
+    // ghi log khoi tao
     log_info("Logger initialized");
     
     return 0;
 }
 
 /*
- * Log a message with specified level
+ * ghi log thong diep voi muc chi dinh
  */
 void log_message(LogLevel level, const char *format, ...) {
     if (log_file == NULL) return;
@@ -97,7 +97,7 @@ void log_message(LogLevel level, const char *format, ...) {
 }
 
 /*
- * Log an FTP command with session ID and client IP
+ * ghi log lenh FTP voi session ID va IP client
  */
 void log_command(int session_id, const char *cmd, const char *client_ip) {
     if (log_file == NULL) return;
@@ -112,7 +112,7 @@ void log_command(int session_id, const char *cmd, const char *client_ip) {
 }
 
 /*
- * Log info message
+ * ghi log thong tin
  */
 void log_info(const char *format, ...) {
     if (log_file == NULL) return;
@@ -133,7 +133,7 @@ void log_info(const char *format, ...) {
 }
 
 /*
- * Log error message
+ * ghi log loi
  */
 void log_error(const char *format, ...) {
     if (log_file == NULL) return;
@@ -154,7 +154,7 @@ void log_error(const char *format, ...) {
 }
 
 /*
- * Close the logger
+ * dong logger
  */
 void close_logger(void) {
     pthread_mutex_lock(&log_mutex);

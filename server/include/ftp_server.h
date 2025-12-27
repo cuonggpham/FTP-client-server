@@ -6,24 +6,24 @@
 #define BUFFER_SIZE 4096
 #define CMD_SIZE 512
 
-/* FTP session state structure */
+/* cau truc trang thai phien FTP */
 typedef struct {
-    int session_id;             /* Unique session identifier */
-    int ctrl_sock;              /* Control socket */
-    int logged_in;              /* Login status flag */
-    int account_index;          /* Index of account in accounts array */
-    char username[50];          /* Temporary username (before password) */
-    char current_dir[256];      /* Current working directory */
-    char root_dir[256];         /* User's root directory */
-    struct sockaddr_in client_addr;  /* Client address */
-    int data_listen_sock;       /* Data listening socket (PASV mode) */
-    int data_sock;              /* Current data connection socket */
+    int session_id;             /* dinh danh phien duy nhat */
+    int ctrl_sock;              /* socket dieu khien */
+    int logged_in;              /* co trang thai dang nhap */
+    int account_index;          /* chi so tai khoan trong mang accounts */
+    char username[50];          /* ten nguoi dung tam thoi (truoc mat khau) */
+    char current_dir[256];      /* thu muc lam viec hien tai */
+    char root_dir[256];         /* thu muc goc cua nguoi dung */
+    struct sockaddr_in client_addr;  /* dia chi client */
+    int data_listen_sock;       /* socket lang nghe du lieu (che do PASV) */
+    int data_sock;              /* socket ket noi du lieu hien tai */
 } FTPSession;
 
-/* Main client handler - main loop */
+/* ham xu ly chinh cho client - vong lap chinh */
 void handle_client(int client_sock, struct sockaddr_in client_addr, int session_id);
 
-/* FTP command handlers */
+/* cac ham xu ly lenh FTP */
 void cmd_user(FTPSession *session, const char *arg);
 void cmd_pass(FTPSession *session, const char *arg);
 void cmd_pwd(FTPSession *session);
@@ -36,7 +36,7 @@ void cmd_type(FTPSession *session, const char *arg);
 void cmd_syst(FTPSession *session);
 void cmd_quit(FTPSession *session);
 
-/* Send response to client */
+/* gui phan hoi den client */
 void send_response(int sock, const char *msg);
 
 #endif

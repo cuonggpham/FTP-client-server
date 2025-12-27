@@ -10,13 +10,13 @@
 #include "../include/ftp_client.h"
 
 /*
- * Log with format: hh:mm:ss <Command> <Response>
+ * ghi log voi dinh dang: hh:mm:ss <Lenh> <Phan hoi>
  */
 void log_response(const char *cmd, const char *response) {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
     
-    // Remove newline from response for cleaner printing
+    // xoa ky tu xuong dong de in sach hon
     char clean_resp[256];
     strncpy(clean_resp, response, sizeof(clean_resp) - 1);
     clean_resp[strcspn(clean_resp, "\r\n")] = 0;
@@ -27,17 +27,17 @@ void log_response(const char *cmd, const char *response) {
 }
 
 /*
- * Connect to FTP server
+ * ket noi den may chu FTP
  */
 int ftp_connect(FTPClient *client, const char *host, int port) {
-    // Create socket
+    // tao socket
     client->ctrl_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (client->ctrl_sock < 0) {
         perror("Cannot create socket");
         return -1;
     }
     
-    // Setup server address
+    // thiet lap dia chi may chu
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
@@ -49,7 +49,7 @@ int ftp_connect(FTPClient *client, const char *host, int port) {
         return -1;
     }
     
-    // Connect
+    // ket noi
     if (connect(client->ctrl_sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         perror("Cannot connect to server");
         close(client->ctrl_sock);
@@ -60,7 +60,7 @@ int ftp_connect(FTPClient *client, const char *host, int port) {
     client->server_port = port;
     client->logged_in = 0;
     
-    // Read welcome message
+    // doc thong diep chao mung
     char buffer[BUFFER_SIZE];
     ftp_recv_response(client, buffer, sizeof(buffer));
     log_response("CONNECT", buffer);
@@ -69,7 +69,7 @@ int ftp_connect(FTPClient *client, const char *host, int port) {
 }
 
 /*
- * Disconnect
+ * ngat ket noi
  */
 void ftp_disconnect(FTPClient *client) {
     if (client->ctrl_sock >= 0) {
@@ -80,7 +80,7 @@ void ftp_disconnect(FTPClient *client) {
 }
 
 /*
- * Send command to server
+ * gui lenh den may chu
  */
 int ftp_send_cmd(FTPClient *client, const char *cmd) {
     char buffer[CMD_SIZE];
@@ -89,7 +89,7 @@ int ftp_send_cmd(FTPClient *client, const char *cmd) {
 }
 
 /*
- * Receive response from server
+ * nhan phan hoi tu may chu
  */
 int ftp_recv_response(FTPClient *client, char *buffer, int size) {
     memset(buffer, 0, size);
@@ -101,25 +101,25 @@ int ftp_recv_response(FTPClient *client, char *buffer, int size) {
 }
 
 /*
- * Login
+ * dang nhap
  */
 int ftp_login(FTPClient *client, const char *user, const char *pass) {
     char cmd[CMD_SIZE];
     char response[BUFFER_SIZE];
     
-    // Send USER
+    // gui lenh USER
     snprintf(cmd, sizeof(cmd), "USER %s", user);
     ftp_send_cmd(client, cmd);
     ftp_recv_response(client, response, sizeof(response));
     log_response(cmd, response);
     
-    // Send PASS
+    // gui lenh PASS
     snprintf(cmd, sizeof(cmd), "PASS %s", pass);
     ftp_send_cmd(client, cmd);
     ftp_recv_response(client, response, sizeof(response));
-    log_response("PASS ****", response);  // Hide password in log
+    log_response("PASS ****", response);  // an mat khau trong log
     
-    // Check result
+    // kiem tra ket qua
     if (strncmp(response, "230", 3) == 0) {
         client->logged_in = 1;
         return 0;
@@ -128,7 +128,7 @@ int ftp_login(FTPClient *client, const char *user, const char *pass) {
 }
 
 /*
- * Print current directory
+ * in thu muc hien tai
  */
 int ftp_pwd(FTPClient *client) {
     char response[BUFFER_SIZE];
@@ -141,7 +141,7 @@ int ftp_pwd(FTPClient *client) {
 }
 
 /*
- * Change directory
+ * thay doi thu muc
  */
 int ftp_cwd(FTPClient *client, const char *dir) {
     char cmd[CMD_SIZE];
@@ -156,13 +156,13 @@ int ftp_cwd(FTPClient *client, const char *dir) {
 }
 
 /*
- * Parse PASV response to get IP and port
- * Format: 227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)
+ * phan tich phan hoi PASV de lay IP va port
+ * dinh dang: 227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)
  */
 int parse_pasv_response(const char *response, char *ip, int *port) {
     int h1, h2, h3, h4, p1, p2;
     
-    // Find opening parenthesis
+    // tim dau ngoac mo
     const char *start = strchr(response, '(');
     if (start == NULL) return -1;
     
@@ -177,17 +177,17 @@ int parse_pasv_response(const char *response, char *ip, int *port) {
 }
 
 /*
- * Create data connection in passive mode
+ * tao ket noi du lieu o che do thu dong
  */
 int open_data_connection(FTPClient *client) {
     char response[BUFFER_SIZE];
     
-    // Send PASV
+    // gui lenh PASV
     ftp_send_cmd(client, "PASV");
     ftp_recv_response(client, response, sizeof(response));
     log_response("PASV", response);
     
-    // Parse response
+    // phan tich phan hoi
     char data_ip[50];
     int data_port;
     if (parse_pasv_response(response, data_ip, &data_port) < 0) {
@@ -195,7 +195,7 @@ int open_data_connection(FTPClient *client) {
         return -1;
     }
     
-    // Connect to data port
+    // ket noi den cong du lieu
     int data_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (data_sock < 0) return -1;
     
@@ -214,24 +214,24 @@ int open_data_connection(FTPClient *client) {
 }
 
 /*
- * List files
+ * liet ke tap tin
  */
 int ftp_list(FTPClient *client) {
     char response[BUFFER_SIZE];
     
-    // Open data connection
+    // mo ket noi du lieu
     int data_sock = open_data_connection(client);
     if (data_sock < 0) {
         printf("Cannot open data connection\n");
         return -1;
     }
     
-    // Send LIST
+    // gui lenh LIST
     ftp_send_cmd(client, "LIST");
     ftp_recv_response(client, response, sizeof(response));
     log_response("LIST", response);
     
-    // Receive data from data socket
+    // nhan du lieu tu socket du lieu
     printf("\n--- File listing ---\n");
     char buffer[BUFFER_SIZE];
     int bytes;
@@ -243,7 +243,7 @@ int ftp_list(FTPClient *client) {
     
     close(data_sock);
     
-    // Read final response
+    // doc phan hoi cuoi cung
     ftp_recv_response(client, response, sizeof(response));
     log_response("LIST", response);
     
@@ -251,24 +251,24 @@ int ftp_list(FTPClient *client) {
 }
 
 /*
- * Download file
+ * tai tap tin xuong
  */
 int ftp_retr(FTPClient *client, const char *filename, const char *local_path) {
     char cmd[CMD_SIZE];
     char response[BUFFER_SIZE];
     
-    // Open data connection
+    // mo ket noi du lieu
     int data_sock = open_data_connection(client);
     if (data_sock < 0) {
         printf("Cannot open data connection\n");
         return -1;
     }
     
-    // Set binary mode
+    // dat che do nhi phan
     ftp_send_cmd(client, "TYPE I");
     ftp_recv_response(client, response, sizeof(response));
     
-    // Send RETR
+    // gui lenh RETR
     snprintf(cmd, sizeof(cmd), "RETR %s", filename);
     ftp_send_cmd(client, cmd);
     ftp_recv_response(client, response, sizeof(response));
@@ -279,7 +279,7 @@ int ftp_retr(FTPClient *client, const char *filename, const char *local_path) {
         return -1;
     }
     
-    // Open local file for writing
+    // mo tap tin cuc bo de ghi
     const char *save_path = (local_path && strlen(local_path) > 0) ? local_path : filename;
     FILE *fp = fopen(save_path, "wb");
     if (fp == NULL) {
@@ -288,7 +288,7 @@ int ftp_retr(FTPClient *client, const char *filename, const char *local_path) {
         return -1;
     }
     
-    // Receive and write file
+    // nhan va ghi tap tin
     char buffer[BUFFER_SIZE];
     int bytes;
     long total = 0;
@@ -302,7 +302,7 @@ int ftp_retr(FTPClient *client, const char *filename, const char *local_path) {
     
     printf("Downloaded %ld bytes -> %s\n", total, save_path);
     
-    // Read final response
+    // doc phan hoi cuoi cung
     ftp_recv_response(client, response, sizeof(response));
     log_response(cmd, response);
     
@@ -310,20 +310,20 @@ int ftp_retr(FTPClient *client, const char *filename, const char *local_path) {
 }
 
 /*
- * Upload file
+ * tai tap tin len
  */
 int ftp_stor(FTPClient *client, const char *local_path, const char *remote_name) {
     char cmd[CMD_SIZE];
     char response[BUFFER_SIZE];
     
-    // Open local file
+    // mo tap tin cuc bo
     FILE *fp = fopen(local_path, "rb");
     if (fp == NULL) {
         perror("Cannot open local file");
         return -1;
     }
     
-    // Open data connection
+    // mo ket noi du lieu
     int data_sock = open_data_connection(client);
     if (data_sock < 0) {
         fclose(fp);
@@ -331,13 +331,13 @@ int ftp_stor(FTPClient *client, const char *local_path, const char *remote_name)
         return -1;
     }
     
-    // Set binary mode
+    // dat che do nhi phan
     ftp_send_cmd(client, "TYPE I");
     ftp_recv_response(client, response, sizeof(response));
     
-    // Send STOR
+    // gui lenh STOR
     const char *name = (remote_name && strlen(remote_name) > 0) ? remote_name : local_path;
-    // Get filename (remove path)
+    // lay ten tap tin (bo duong dan)
     const char *base = strrchr(name, '/');
     if (base) name = base + 1;
     
@@ -352,7 +352,7 @@ int ftp_stor(FTPClient *client, const char *local_path, const char *remote_name)
         return -1;
     }
     
-    // Read and send file
+    // doc va gui tap tin
     char buffer[BUFFER_SIZE];
     size_t bytes;
     long total = 0;
@@ -366,7 +366,7 @@ int ftp_stor(FTPClient *client, const char *local_path, const char *remote_name)
     
     printf("Uploaded %ld bytes\n", total);
     
-    // Read final response
+    // doc phan hoi cuoi cung
     ftp_recv_response(client, response, sizeof(response));
     log_response(cmd, response);
     
@@ -374,7 +374,7 @@ int ftp_stor(FTPClient *client, const char *local_path, const char *remote_name)
 }
 
 /*
- * Quit
+ * thoat
  */
 int ftp_quit(FTPClient *client) {
     char response[BUFFER_SIZE];

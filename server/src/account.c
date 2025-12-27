@@ -74,7 +74,7 @@ int add_account(const char *username, const char *password, const char *home_dir
         return -1;
     }
     
-    // Check for duplicate username
+    // kiem tra trung ten nguoi dung
     for (int i = 0; i < account_count; i++) {
         if (strcmp(accounts[i].username, username) == 0) {
             printf("Username already exists!\n");
