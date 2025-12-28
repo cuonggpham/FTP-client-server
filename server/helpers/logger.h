@@ -30,7 +30,7 @@ void log_message(LogLevel level, const char *format, ...);
  * ghi log lenh FTP voi session ID va IP client
  * dinh dang: [YYYY-MM-DD HH:MM:SS] [CMD] [S:id] lenh IP_client
  */
-void log_command(int session_id, const char *cmd, const char *client_ip);
+void log_command(int session_id, const char *cmd, const char *client_ip, int client_port);
 
 /*
  * ghi log thong tin

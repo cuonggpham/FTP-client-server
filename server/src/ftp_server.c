@@ -511,7 +511,7 @@ void handle_client(int client_sock, struct sockaddr_in client_addr, int session_
 
         buffer[strcspn(buffer, "\r\n")] = 0; // loai bo \r\n
 
-        log_command(session.session_id, buffer, inet_ntoa(client_addr.sin_addr));
+        log_command(session.session_id, buffer, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 
         // tach lenh va tham so
         char *cmd = strtok(buffer, " ");

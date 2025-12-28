@@ -20,8 +20,7 @@ static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 static void get_timestamp(char *buffer, size_t size) {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);
-    snprintf(buffer, size, "%04d-%02d-%02d %02d:%02d:%02d",
-             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+    snprintf(buffer, size, "%02d:%02d:%02d",
              t->tm_hour, t->tm_min, t->tm_sec);
 }
 
@@ -99,14 +98,23 @@ void log_message(LogLevel level, const char *format, ...) {
 /*
  * ghi log lenh FTP voi session ID va IP client
  */
-void log_command(int session_id, const char *cmd, const char *client_ip) {
+void log_command(int session_id, const char *cmd, const char *client_ip, int client_port) {
     if (log_file == NULL) return;
     
     char timestamp[32];
     get_timestamp(timestamp, sizeof(timestamp));
     
+    // An password trong log
+    char safe_cmd[256];
+    if (strncasecmp(cmd, "PASS ", 5) == 0) {
+        snprintf(safe_cmd, sizeof(safe_cmd), "PASS ****");
+    } else {
+        strncpy(safe_cmd, cmd, sizeof(safe_cmd) - 1);
+        safe_cmd[sizeof(safe_cmd) - 1] = '\0';
+    }
+    
     pthread_mutex_lock(&log_mutex);
-    fprintf(log_file, "[%s] [CMD] [SID=%d] %s %s\n", timestamp, session_id, cmd, client_ip);
+    fprintf(log_file, "[%s] [CMD] [SID=%d] %s %s:%d\n", timestamp, session_id, safe_cmd, client_ip, client_port);
     fflush(log_file);
     pthread_mutex_unlock(&log_mutex);
 }
