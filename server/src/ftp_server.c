@@ -47,7 +47,7 @@ void cmd_pass(FTPSession *session, const char *arg) {
     int idx = check_login(session->username, arg);
     if (idx >= 0) {
         session->logged_in = 1;
-        session->account_index = idx;
+        session->account_index = idx; // luu vi tri tai khoan
 
         // Thiet lap thu muc goc va thu muc hien tai
         strncpy(session->root_dir, accounts[idx].home_dir, sizeof(session->root_dir) - 1);

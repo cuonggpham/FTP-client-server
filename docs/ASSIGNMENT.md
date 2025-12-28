@@ -223,12 +223,4 @@ FTP-client-server/
 └── REPORT.md
 ```
 
----
 
-## Workload Balance
-
-| Thành viên | Files chính | Lines of Code (ước tính) |
-|-----------|-------------|-------------------------|
-| **Cuong** | server.c, logger.c | ~200 dòng |
-| **Huy** | account.c, cmd_pwd/cwd/list/pasv/retr/stor | ~350 dòng |
-| **Chien** | client.c, ftp_client.c | ~400 dòng |
