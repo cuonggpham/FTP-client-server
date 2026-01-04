@@ -4,11 +4,10 @@
 #define BUFFER_SIZE 4096
 #define CMD_SIZE 256
 
-// cau truc ket noi FTP client
 typedef struct {
     int ctrl_sock;      // socket dieu khien
-    char server_ip[50]; // dia chi IP may chu
-    int server_port;    // cong may chu
+    char server_ip[50]; // dia chi IP server
+    int server_port;    // port server
     int logged_in;      // co trang thai dang nhap
 } FTPClient;
 

@@ -142,7 +142,7 @@ void cmd_pasv(FTPSession *session) {
         return;
     }
 
-    // dong socket hien tai neu co
+    // dong socket cu
     if (session->data_listen_sock >= 0) {
         close(session->data_listen_sock);
     }
@@ -190,8 +190,8 @@ void cmd_pasv(FTPSession *session) {
     snprintf(response, sizeof(response),
              "227 Entering Passive Mode (%d,%d,%d,%d,%d,%d)\r\n",
              ip[0], ip[1], ip[2], ip[3],
-             (pasv_port >> 8) & 0xFF,
-             pasv_port & 0xFF);
+             (pasv_port >> 8) & 0xFF, // high byte (/256)
+             pasv_port & 0xFF);       // low byte (%256)
 
     send_response(session->ctrl_sock, response);
 }
