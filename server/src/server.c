@@ -45,13 +45,13 @@ typedef struct {
  */
 void *client_thread(void *arg) {
     ClientInfo *info = (ClientInfo *)arg;
-    
+
     // xu ly client
     handle_client(info->client_sock, info->client_addr, info->session_id);
-    
-    log_info("[SID=%d] Client disconnected: %s:%d", 
+
+    log_info("[SID=%d] Client disconnected: %s:%d",
            info->session_id,
-           inet_ntoa(info->client_addr.sin_addr), 
+           inet_ntoa(info->client_addr.sin_addr),
            ntohs(info->client_addr.sin_port));
     free(info);
     return NULL;
@@ -63,24 +63,24 @@ int main(int argc, char *argv[]) {
     if (argc > 1) {
         port = atoi(argv[1]);
     }
-    
+
     // khoi tao logger
     if (init_logger() < 0) {
         fprintf(stderr, "Failed to initialize logger\n");
         return 1;
     }
-    
+
     // doc danh sach tai khoan
     log_info("=== FTP SERVER ===");
     log_info("Loading account file...");
-    
+
     if (load_accounts(ACCOUNT_FILE) < 0) {
         log_info("Cannot load account file, creating new file...");
         // them tai khoan mac dinh
         add_account("user1", "123456", "./data/user1");
         save_accounts(ACCOUNT_FILE);
     }
-    
+
     // tao socket
     int server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (server_sock < 0) {
@@ -88,18 +88,18 @@ int main(int argc, char *argv[]) {
         close_logger();
         return 1;
     }
-    
+
     // cho phep tai su dung dia chi
     int opt = 1;
     setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    
+
     // thiet lap dia chi server
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
+    server_addr.sin_family = AF_INET; // IPv4
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(port);
-    
+
     // bind socket
     if (bind(server_sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         log_error("Bind failed: %s", strerror(errno));
@@ -107,7 +107,7 @@ int main(int argc, char *argv[]) {
         close_logger();
         return 1;
     }
-    
+
     // lang nghe
     if (listen(server_sock, 10) < 0) {
         log_error("Listen failed: %s", strerror(errno));
@@ -115,31 +115,31 @@ int main(int argc, char *argv[]) {
         close_logger();
         return 1;
     }
-    
+
     log_info("FTP Server running on port %d", port);
     log_info("Waiting for client connections...");
     printf("FTP Server running on port %d - Logs: %s\n", port, "./server/logs/");
-    
+
     // vong lap chinh - tao thread moi cho moi client
     while (1) {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
-        
+
         // chap nhan ket noi moi
         int client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &client_len);
         if (client_sock < 0) {
             log_error("Accept failed: %s", strerror(errno));
             continue;
         }
-        
+
         // tao session id duy nhat
         int session_id = get_next_session_id();
-        
-        log_info("[SID=%d] Client connected: %s:%d", 
+
+        log_info("[SID=%d] Client connected: %s:%d",
                session_id,
-               inet_ntoa(client_addr.sin_addr), 
+               inet_ntoa(client_addr.sin_addr),
                ntohs(client_addr.sin_port));
-        
+
         // tao cau truc de luu thong tin client
         ClientInfo *info = (ClientInfo *)malloc(sizeof(ClientInfo));
         if (info == NULL) {
@@ -150,7 +150,7 @@ int main(int argc, char *argv[]) {
         info->client_sock = client_sock;
         info->client_addr = client_addr;
         info->session_id = session_id;
-        
+
         // tao thread moi de xu ly client
         pthread_t tid;
         if (pthread_create(&tid, NULL, client_thread, (void *)info) != 0) {
@@ -159,11 +159,11 @@ int main(int argc, char *argv[]) {
             free(info);
             continue;
         }
-        
+
         // tach thread - tu dong giai phong khi ket thuc
         pthread_detach(tid);
     }
-    
+
     close(server_sock);
     close_logger();
     return 0;

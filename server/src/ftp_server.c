@@ -509,7 +509,7 @@ void handle_client(int client_sock, struct sockaddr_in client_addr, int session_
             break;  // client dong ket noi
         }
 
-        buffer[strcspn(buffer, "\r\n")] = 0; // loai bo \r\n
+        buffer[strcspn(buffer, "\r\n")] = 0; // loai bo \r\n 
 
         log_command(session.session_id, buffer, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 

@@ -5,6 +5,821 @@
 
 ---
 
+# 📢 SCRIPT THUYẾT TRÌNH (Dạng lời nói)
+
+> Phần này được viết dưới dạng **lời nói thuyết trình** để dễ dàng trình bày trước lớp/ban giám khảo.
+
+---
+
+## 🎤 MỞ ĐẦU (30 giây)
+
+**[Slide 1: Giới thiệu]**
+
+> Xin chào thầy/cô và các bạn. Em là **Cương**, hôm nay em sẽ trình bày về phần **FTP Server Core** mà em đã thực hiện trong đồ án này.
+>
+> Phần của em tập trung vào **3 nội dung chính**:
+> 1. **Socket Server** - Cách tạo và cấu hình socket TCP
+> 2. **Multi-Client** - Xử lý nhiều client đồng thời bằng đa luồng
+> 3. **Control Connection** - Quản lý phiên làm việc và xử lý các lệnh FTP
+
+---
+
+## 🎤 PHẦN 1: SOCKET SERVER CORE (3-4 phút)
+
+**[Slide 2: Cấu trúc tổng quan]**
+
+> Đầu tiên, em xin trình bày về **cấu trúc Socket Server**.
+>
+> Server của chúng em được viết bằng ngôn ngữ **C**, chạy trên hệ điều hành **Linux**, sử dụng **POSIX Socket API** để giao tiếp mạng.
+
+**[Slide 2.1: Mô hình TCP/IP - Giải thích chi tiết]**
+
+> Trước khi đi vào code, em xin giải thích về **mô hình mạng TCP/IP** mà FTP sử dụng:
+>
+> **Mô hình 4 tầng:**
+> ```
+> ┌─────────────────────────────────────┐
+> │  Tầng 4: Application (FTP, HTTP)   │  ← FTP protocol ở đây
+> ├─────────────────────────────────────┤
+> │  Tầng 3: Transport (TCP, UDP)      │  ← Socket API giao tiếp ở đây
+> ├─────────────────────────────────────┤
+> │  Tầng 2: Internet (IP)             │  ← Địa chỉ IP
+> ├─────────────────────────────────────┤
+> │  Tầng 1: Network Access (Ethernet) │  ← Card mạng
+> └─────────────────────────────────────┘
+> ```
+>
+> **Tại sao chọn TCP thay vì UDP?**
+> - **TCP (Transmission Control Protocol):**
+>   - Đảm bảo dữ liệu đến **đúng thứ tự**
+>   - **Tin cậy** - nếu mất gói tin sẽ gửi lại
+>   - Có **kiểm soát luồng** (flow control)
+>   - Phù hợp cho FTP vì cần truyền file **chính xác 100%**
+>
+> - **UDP (User Datagram Protocol):**
+>   - Nhanh hơn nhưng **không đảm bảo** thứ tự và độ tin cậy
+>   - Phù hợp cho video streaming, game online
+
+**[Slide 2.2: TCP 3-Way Handshake]**
+
+> Khi client kết nối, TCP thực hiện **bắt tay 3 bước**:
+>
+> ```
+> Client                              Server
+>   │                                    │
+>   │ ──── SYN (seq=100) ──────────────► │  Bước 1: Client gửi SYN
+>   │                                    │
+>   │ ◄─── SYN-ACK (seq=300, ack=101) ── │  Bước 2: Server trả lời SYN-ACK
+>   │                                    │
+>   │ ──── ACK (ack=301) ──────────────► │  Bước 3: Client xác nhận
+>   │                                    │
+>   │ ═══════ CONNECTION ESTABLISHED ═══ │
+> ```
+>
+> Sau 3 bước này, kết nối TCP được thiết lập và có thể truyền dữ liệu 2 chiều.
+
+**[Slide 2.3: Socket là gì?]**
+
+> **Socket** là một điểm cuối (endpoint) của kết nối mạng, được định danh bởi:
+> - **IP Address**: Xác định máy tính (ví dụ: `192.168.1.100`)
+> - **Port Number**: Xác định ứng dụng trên máy đó (ví dụ: `2121`)
+>
+> Trong Linux/Unix, socket được xử lý như một **file descriptor** (số nguyên), cho phép dùng các hàm I/O như `read()`, `write()`, `close()`.
+>
+> ```
+> Socket = IP Address + Port Number
+> VD: 192.168.1.100:2121
+> ```
+
+**[Slide 3: Tạo Socket]**
+
+> Để tạo một server socket, em sử dụng hàm `socket()` với các tham số:
+> - `AF_INET`: Sử dụng giao thức **IPv4** (Address Family Internet)
+>   - Còn có `AF_INET6` cho IPv6, `AF_UNIX` cho giao tiếp local
+> - `SOCK_STREAM`: Sử dụng giao thức **TCP** - đảm bảo truyền tin cậy
+>   - Còn có `SOCK_DGRAM` cho UDP
+> - Tham số cuối là `0`: Sử dụng protocol mặc định (TCP cho SOCK_STREAM)
+>
+> **Kết quả:** Trả về một **file descriptor** (số nguyên dương) đại diện cho socket, hoặc **-1** nếu lỗi.
+
+```c
+int server_sock = socket(AF_INET, SOCK_STREAM, 0);
+if (server_sock < 0) {
+    perror("Cannot create socket");  // In lỗi chi tiết
+    return -1;
+}
+// Thành công: server_sock = 3, 4, 5,... (số dương)
+```
+
+**[Slide 4: Socket Options]**
+
+> Tiếp theo, em thiết lập option `SO_REUSEADDR`. Đây là một option rất quan trọng.
+>
+> **Vấn đề TIME_WAIT:**
+> - Khi đóng kết nối TCP, socket không giải phóng ngay mà vào trạng thái `TIME_WAIT`
+> - Trạng thái này kéo dài **2-4 phút** (gấp đôi Maximum Segment Lifetime)
+> - Mục đích: Đảm bảo các gói tin trễ không ảnh hưởng kết nối mới
+>
+> **Nếu KHÔNG có `SO_REUSEADDR`:**
+> ```
+> $ ./server
+> ^C  (Ctrl+C để dừng)
+> $ ./server
+> Error: Address already in use  ← Port vẫn đang trong TIME_WAIT!
+> ```
+>
+> **Có `SO_REUSEADDR`:**
+> ```
+> $ ./server
+> ^C
+> $ ./server
+> Server running on port 2121  ← OK, bind lại được ngay!
+> ```
+
+```c
+int opt = 1;
+setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+```
+
+**[Slide 5: Cấu hình địa chỉ - sockaddr_in]**
+
+> Cấu trúc `sockaddr_in` lưu địa chỉ socket:
+>
+> ```c
+> struct sockaddr_in {
+>     sa_family_t    sin_family;   // AF_INET (IPv4)
+>     in_port_t      sin_port;     // Port number (network byte order)
+>     struct in_addr sin_addr;     // IP address
+> };
+> ```
+>
+> **Thiết lập từng thành phần:**
+> - `sin_family = AF_INET`: Dùng IPv4
+> - `sin_addr.s_addr = INADDR_ANY (0.0.0.0)`: Lắng nghe trên TẤT CẢ interfaces
+>   - Bao gồm: localhost (127.0.0.1), WiFi (192.168.1.x), Ethernet...
+> - `sin_port = htons(2121)`: Port 2121
+
+**[Slide 5.1: Byte Order - Tại sao cần htons()?]**
+
+> Máy tính và mạng **lưu trữ số khác nhau**:
+>
+> | Kiểu | Tên gọi | Cách lưu số 2121 (0x0849) |
+> |------|---------|---------------------------|
+> | Little-Endian | Host byte order | `49 08` (byte thấp trước) |
+> | Big-Endian | Network byte order | `08 49` (byte cao trước) |
+>
+> Intel/AMD dùng Little-Endian, nhưng chuẩn mạng là Big-Endian.
+>
+> **Các hàm chuyển đổi:**
+> - `htons()`: Host TO Network Short (16-bit, dùng cho port)
+> - `htonl()`: Host TO Network Long (32-bit, dùng cho IP)
+> - `ntohs()`, `ntohl()`: Chiều ngược lại
+>
+> **Nếu quên dùng `htons()`:** Server sẽ lắng nghe sai port!
+> ```
+> 2121 = 0x0849
+> Không có htons(): Máy gửi 0x4908 = 18696 ← Sai port!
+> Có htons(): Máy gửi 0x0849 = 2121 ✓
+> ```
+
+**[Slide 5.2: Bind - Gán địa chỉ cho socket]**
+
+> Hàm `bind()` **liên kết socket với địa chỉ IP:Port**:
+>
+> ```
+> ┌─────────────────────┐
+> │   Server Socket     │
+> │   (chưa có địa chỉ) │
+> └──────────┬──────────┘
+>            │ bind(sock, 0.0.0.0:2121)
+>            ▼
+> ┌─────────────────────┐
+> │   Server Socket     │
+> │   0.0.0.0:2121      │  ← Giờ socket "sở hữu" port 2121
+> └─────────────────────┘
+> ```
+>
+> **Sau khi bind thành công:**
+> - Socket được gán địa chỉ 0.0.0.0:2121
+> - Không process nào khác có thể bind vào port 2121
+> - Có thể kiểm tra: `netstat -tlnp | grep 2121`
+
+**[Slide 6: Listen - Bắt đầu lắng nghe]**
+
+> Hàm `listen()` chuyển socket sang trạng thái **LISTEN**:
+>
+> ```c
+> listen(server_sock, 10);  // backlog = 10
+> ```
+>
+> **Tham số backlog = 10:**
+> - Đây là **hàng đợi kết nối** (connection queue)
+> - Khi client gọi `connect()`, kernel đưa vào hàng đợi
+> - Hàm `accept()` lấy kết nối ra khỏi hàng đợi
+>
+> ```
+> Client A ─┐
+> Client B ─┼─► ┌──────────────┐     ┌─────────────┐
+> Client C ─┤   │  Backlog     │────►│   accept()  │
+> ...       │   │  Queue (10)  │     │             │
+> Client K ─┘   └──────────────┘     └─────────────┘
+>               │← max 10 kết nối chờ →│
+> ```
+>
+> **Nếu hàng đợi đầy (> 10):**
+> - Client mới sẽ nhận được lỗi `ECONNREFUSED`
+> - Hoặc TCP sẽ retry sau một khoảng thời gian
+
+---
+
+## 🎤 PHẦN 2: MULTI-CLIENT - ĐA LUỒNG (3-4 phút)
+
+**[Slide 7: Tại sao cần đa luồng?]**
+
+> Bây giờ em xin trình bày về cách xử lý **nhiều client đồng thời**.
+>
+> **Vấn đề với single-thread:**
+> ```
+> Client A kết nối → Server xử lý
+> Client A tải file 100MB (mất 30 giây)
+>    ↓
+> Client B kết nối → PHẢI ĐỢI 30 giây! ← Không chấp nhận được
+> ```
+>
+> **Giải pháp đa luồng:**
+> ```
+> Client A kết nối → Thread 1 xử lý A
+> Client B kết nối → Thread 2 xử lý B (song song!)
+> Client C kết nối → Thread 3 xử lý C (song song!)
+> ```
+>
+> **Ưu điểm:**
+> - Mỗi client có thread riêng, **không chờ đợi lẫn nhau**
+> - Main thread chỉ lo việc accept kết nối mới
+> - Tận dụng CPU đa nhân hiệu quả
+
+**[Slide 8: Vòng lặp Accept]**
+
+> Đây là vòng lặp chính của server:
+>
+> ```
+> Main Thread
+>      │
+>      ▼
+> ┌─────────────────────────────────────────────┐
+> │  while (1) {                                │
+> │      client_sock = accept(server_sock);     │ ◄── BLOCKING
+> │      // Tạo thread mới cho client           │
+> │      pthread_create(..., client_thread);    │
+> │  }                                          │
+> └─────────────────────────────────────────────┘
+> ```
+>
+> **Đặc điểm của `accept()`:**
+> 1. **Blocking**: Chương trình dừng lại và đợi cho đến khi có client
+> 2. Trả về **socket MỚI** dành riêng cho client đó
+> 3. **Socket gốc (`server_sock`)** vẫn tiếp tục lắng nghe
+>
+> ```
+> server_sock (port 2121) ──accept()──► client_sock_1 (cho Client A)
+>                         ──accept()──► client_sock_2 (cho Client B)
+>                         ──accept()──► client_sock_3 (cho Client C)
+> ```
+
+**[Slide 9: Session ID - Thread-safe]**
+
+> Mỗi client được gán một **Session ID duy nhất** để phân biệt trong log.
+>
+> **Vấn đề race condition:** Khi nhiều client kết nối cùng lúc, nếu nhiều thread đọc/ghi biến `next_session_id` đồng thời → 2 client có thể có **cùng ID**!
+>
+> **Giải pháp:** Sử dụng **mutex** để bảo vệ biến `next_session_id`:
+> - Thread lock mutex → đọc và tăng giá trị → unlock mutex
+> - Thread khác phải đợi cho đến khi mutex được unlock
+
+```c
+static int get_next_session_id(void) {
+    pthread_mutex_lock(&session_id_mutex);    // Khóa
+    int id = ++next_session_id;               // Đọc và tăng
+    pthread_mutex_unlock(&session_id_mutex);  // Mở khóa
+    return id;
+}
+```
+
+**[Slide 10: Tạo Thread mới]**
+
+> Với mỗi client mới, em tạo một **thread riêng** để xử lý:
+> 1. `malloc(ClientInfo)`: Cấp phát bộ nhớ lưu thông tin client
+> 2. `pthread_create()`: Tạo thread mới, truyền hàm `client_thread` và thông tin client
+> 3. `pthread_detach()`: Thread sẽ **tự động cleanup** khi kết thúc, không cần `join`
+>
+> **Lưu ý quan trọng:** Phải dùng `malloc()` vì nếu dùng biến local, khi main loop tiếp tục, biến sẽ bị **ghi đè**.
+
+```c
+pthread_t tid;
+pthread_create(&tid, NULL, client_thread, (void *)info);
+pthread_detach(tid);  // Tự động cleanup khi kết thúc
+```
+
+**[Slide 11: Flow xử lý client]**
+
+> Tóm tắt flow khi một client kết nối:
+> 1. `accept()` → nhận client socket
+> 2. `get_next_session_id()` → tạo Session ID
+> 3. `malloc(ClientInfo)` → lưu thông tin
+> 4. `pthread_create()` → tạo thread mới
+> 5. Thread mới gọi `handle_client()` → xử lý lệnh FTP
+> 6. Client gửi `QUIT` hoặc ngắt kết nối
+> 7. `free(info)` → giải phóng bộ nhớ
+> 8. Thread tự động kết thúc
+
+---
+
+## 🎤 PHẦN 3: CONTROL CONNECTION (3-4 phút)
+
+**[Slide 12: FTPSession Structure]**
+
+> Bây giờ em xin trình bày về **quản lý phiên làm việc**.
+>
+> Mỗi client có một cấu trúc `FTPSession` riêng, lưu trữ:
+> - `session_id`: ID phiên duy nhất
+> - `ctrl_sock`: Socket điều khiển để gửi/nhận lệnh
+> - `logged_in`: Trạng thái đăng nhập (0 = chưa, 1 = đã đăng nhập)
+> - `username`: Tên đăng nhập
+> - `root_dir`: Thư mục gốc của user (ví dụ: `./data/user1`)
+> - `current_dir`: Thư mục làm việc hiện tại (ví dụ: `/files`)
+
+**[Slide 13: Command Processing Loop]**
+
+> Vòng lặp xử lý lệnh chính:
+> 1. `recv()` nhận dữ liệu từ client - đây là hàm **blocking**
+> 2. Xóa ký tự xuống dòng `\r\n`
+> 3. Ghi log lệnh nhận được
+> 4. **Parse lệnh**: Tách thành `cmd` (lệnh) và `arg` (tham số)
+>    - Ví dụ: `"USER user1"` → cmd = `"USER"`, arg = `"user1"`
+> 5. Điều hướng đến **handler tương ứng**
+
+```c
+while (running) {
+    int bytes = recv(client_sock, buffer, sizeof(buffer) - 1, 0);
+    if (bytes <= 0) break;  // Client ngắt kết nối
+    
+    char *cmd = strtok(buffer, " ");   // Lệnh
+    char *arg = strtok(NULL, "");      // Tham số
+    
+    if (strcasecmp(cmd, "USER") == 0) {
+        cmd_user(&session, arg);
+    } else if (strcasecmp(cmd, "PASS") == 0) {
+        cmd_pass(&session, arg);
+    }
+    // ... các lệnh khác
+}
+```
+
+**[Slide 14: Xử lý đăng nhập USER/PASS]**
+
+> Quy trình đăng nhập theo chuẩn FTP gồm 2 bước:
+>
+> **Bước 1 - USER:**
+> - Client gửi: `USER user1`
+> - Server lưu username tạm thời vào session
+> - Server trả về: `331 Username OK, need password`
+>
+> **Bước 2 - PASS:**
+> - Client gửi: `PASS 123456`
+> - Server gọi `check_login()` kiểm tra trong danh sách tài khoản
+> - Nếu đúng: `logged_in = 1`, thiết lập `root_dir`, trả về `230 User logged in`
+> - Nếu sai: Trả về `530 Login incorrect`
+
+**[Slide 15: Bảo mật - Chống Path Traversal]**
+
+> Một vấn đề bảo mật quan trọng là **Path Traversal Attack**.
+>
+> **Ví dụ:** Nếu user ở thư mục `/`, gửi lệnh `CWD ..` để đi lên thư mục cha → có thể truy cập ra ngoài thư mục được phép!
+>
+> **Giải pháp của em:**
+> - Khi user đang ở root (`/`) và gõ `CWD ..`, server trả về `550 Permission denied`
+> - Mọi đường dẫn đều được **ghép với root_dir** trước khi truy cập file system
+
+```c
+if (strcmp(arg, "..") == 0 && strcmp(session->current_dir, "/") == 0) {
+    send_response(session->ctrl_sock, "550 Permission denied\r\n");
+    return;
+}
+```
+
+---
+
+## 🎤 PHẦN 4: DEMO THỰC TẾ (2-3 phút)
+
+**[Demo: Chạy Server]**
+
+> Bây giờ em xin demo thực tế. Đầu tiên, em chạy server:
+
+```bash
+./bin/ftp_server
+```
+
+> Như các bạn thấy, server đã khởi động:
+> - Load được 4 tài khoản từ file
+> - Đang lắng nghe trên port 2121
+> - Log được ghi vào thư mục `./server/logs/`
+
+**[Demo: Client kết nối]**
+
+> Tiếp theo, em mở một terminal khác và chạy client:
+
+```bash
+./bin/ftp_client
+```
+
+> Như các bạn thấy:
+> - Client kết nối thành công, nhận được message `220 FTP Server Ready`
+> - Em nhập username `cuong` và password
+> - Server trả về `230 User logged in` - đăng nhập thành công!
+
+**[Demo: Nhiều client đồng thời]**
+
+> Bây giờ em mở thêm một client nữa trong terminal thứ 3:
+
+```bash
+./bin/ftp_client
+```
+
+> Như các bạn thấy trong log của server:
+> - Client 1 có Session ID = 1
+> - Client 2 có Session ID = 2
+> - **Cả 2 client đều được xử lý đồng thời** nhờ cơ chế đa luồng
+
+**[Demo: Xem log server]**
+
+> Cuối cùng, em mở file log để xem:
+
+```
+[21:13:49] [INFO] === FTP SERVER ===
+[21:26:13] [INFO] [SID=1] Client connected: 127.0.0.1:57468
+[21:26:15] [CMD] [SID=1] USER cuong 127.0.0.1:57468
+[21:26:15] [CMD] [SID=1] PASS **** 127.0.0.1:57468
+[21:28:37] [INFO] [SID=2] Client connected: 127.0.0.1:43424
+```
+
+> Log ghi lại đầy đủ:
+> - Thời gian
+> - Session ID
+> - Lệnh nhận được
+> - IP:Port của client
+> - **Password được ẩn thành `****`** để bảo mật
+
+---
+
+## 🎤 KẾT LUẬN (30 giây)
+
+**[Slide cuối: Tổng kết]**
+
+> Tóm lại, phần em đã thực hiện:
+> 1. **Socket Server TCP** với đầy đủ các bước: socket → bind → listen → accept
+> 2. **Xử lý đa client** bằng pthread, có mutex bảo vệ Session ID
+> 3. **Control Connection** quản lý phiên, parse và xử lý các lệnh FTP cơ bản
+> 4. **Logging** chi tiết với timestamp, Session ID, và ẩn password
+> 5. **Bảo mật** chống path traversal attack
+>
+> Em xin cảm ơn thầy/cô và các bạn đã lắng nghe. Em sẵn sàng trả lời các câu hỏi!
+
+---
+
+# ❓ CÂU HỎI VẤN ĐÁP (Q&A)
+
+> Dưới đây là các câu hỏi thường gặp khi bảo vệ đồ án và câu trả lời gợi ý.
+
+---
+
+## 📌 NHÓM 1: CÂU HỎI VỀ SOCKET
+
+### **Câu 1: Tại sao dùng TCP thay vì UDP cho FTP?**
+
+**Trả lời:**
+> FTP cần truyền file **chính xác 100%**, không được mất dữ liệu. TCP cung cấp:
+> - **Tin cậy (Reliability)**: Nếu gói tin bị mất, TCP tự động gửi lại
+> - **Đúng thứ tự (Ordering)**: Các byte đến đúng thứ tự gửi
+> - **Kiểm soát luồng (Flow control)**: Tránh gửi quá nhanh làm nghẽn
+>
+> UDP nhanh hơn nhưng không đảm bảo các yếu tố trên, phù hợp cho video streaming, game online - những ứng dụng có thể chấp nhận mất vài frame.
+
+---
+
+### **Câu 2: Hàm `bind()` làm gì? Tại sao cần thiết?**
+
+**Trả lời:**
+> `bind()` **gán địa chỉ IP:Port cho socket**. 
+>
+> - Sau khi tạo socket bằng `socket()`, socket chưa có địa chỉ
+> - `bind()` liên kết socket với địa chỉ cụ thể (ví dụ: `0.0.0.0:2121`)
+> - Sau `bind()`, **không process nào khác** có thể sử dụng port đó
+> - Client dùng port này để kết nối đến server
+
+---
+
+### **Câu 3: `INADDR_ANY` (0.0.0.0) nghĩa là gì?**
+
+**Trả lời:**
+> `INADDR_ANY` nghĩa là server lắng nghe trên **tất cả network interfaces**:
+> - `127.0.0.1` (localhost) - kết nối từ chính máy đó
+> - `192.168.1.x` (WiFi) - kết nối từ mạng LAN
+> - `10.0.0.x` (Ethernet) - kết nối từ mạng nội bộ
+>
+> Nếu chỉ bind vào `127.0.0.1`, client từ máy khác sẽ không kết nối được.
+
+---
+
+### **Câu 4: Tại sao cần `htons()` khi gán port?**
+
+**Trả lời:**
+> Máy tính (Intel/AMD) dùng **Little-Endian** nhưng mạng dùng **Big-Endian**.
+>
+> Ví dụ port `2121 = 0x0849`:
+> - Little-Endian lưu: `49 08` (byte thấp trước)
+> - Big-Endian lưu: `08 49` (byte cao trước)
+>
+> `htons()` = **Host TO Network Short** - chuyển đổi 16-bit từ host sang network byte order.
+>
+> Nếu quên dùng, server sẽ lắng nghe **sai port** (0x4908 = 18696 thay vì 2121).
+
+---
+
+### **Câu 5: Tham số `backlog` trong `listen()` có ý nghĩa gì?**
+
+**Trả lời:**
+> `backlog` là **số kết nối tối đa** có thể chờ trong hàng đợi.
+>
+> - Khi client gọi `connect()`, kernel đưa vào hàng đợi
+> - Hàm `accept()` lấy kết nối ra khỏi hàng đợi để xử lý
+> - Nếu hàng đợi đầy, client mới sẽ bị **từ chối** (ECONNREFUSED)
+>
+> Trong code em dùng `backlog = 10`, nghĩa là tối đa 10 client có thể chờ đồng thời.
+
+---
+
+## 📌 NHÓM 2: CÂU HỎI VỀ ĐA LUỒNG (MULTI-THREADING)
+
+### **Câu 6: Tại sao cần đa luồng? Không dùng được không?**
+
+**Trả lời:**
+> **Có thể không dùng**, nhưng sẽ có vấn đề:
+>
+> - Nếu chỉ có 1 thread, khi client A đang download file 100MB (30 giây), client B phải **đợi 30 giây** mới được xử lý
+> - Với đa luồng, mỗi client có thread riêng, **xử lý song song**
+> - Tận dụng được CPU đa nhân
+>
+> Các phương án thay thế: `select()`, `poll()`, `epoll()` (I/O multiplexing) - nhưng phức tạp hơn.
+
+---
+
+### **Câu 7: Mutex là gì? Tại sao cần mutex cho Session ID?**
+
+**Trả lời:**
+> **Mutex** (Mutual Exclusion) là cơ chế **khóa** đảm bảo chỉ một thread truy cập tài nguyên tại một thời điểm.
+>
+> **Vấn đề race condition:**
+> ```
+> Thread 1: đọc next_session_id = 5
+> Thread 2: đọc next_session_id = 5  (cùng lúc!)
+> Thread 1: next_session_id = 6, trả về 6
+> Thread 2: next_session_id = 7, trả về 7
+> → Bỏ mất ID 6 cho Thread 2, cả hai có thể cùng ID!
+> ```
+>
+> **Với mutex:**
+> ```
+> Thread 1: lock → đọc 5 → tăng 6 → trả về 6 → unlock
+> Thread 2: (đợi) → lock → đọc 6 → tăng 7 → trả về 7 → unlock
+> → Mỗi thread có ID khác nhau!
+> ```
+
+---
+
+### **Câu 8: Tại sao dùng `malloc()` cho ClientInfo thay vì biến local?**
+
+**Trả lời:**
+> Vì biến local sẽ bị **ghi đè** khi vòng lặp tiếp tục.
+>
+> ```c
+> while (1) {
+>     ClientInfo info;  // Biến local trên stack
+>     info.client_sock = accept(...);
+>     pthread_create(&tid, NULL, thread_func, &info);
+>     // Vòng lặp tiếp tục → info bị ghi đè!
+>     // Thread mới đọc dữ liệu SAI!
+> }
+> ```
+>
+> Với `malloc()`:
+> ```c
+> ClientInfo *info = malloc(sizeof(ClientInfo));
+> // Memory trên heap, tồn tại cho đến khi free()
+> // Thread có thể đọc an toàn
+> ```
+
+---
+
+### **Câu 9: `pthread_detach()` khác gì `pthread_join()`?**
+
+**Trả lời:**
+> - **`pthread_join()`**: Main thread **đợi** cho đến khi thread con kết thúc, sau đó mới tiếp tục
+> - **`pthread_detach()`**: Thread con chạy **độc lập**, tự động cleanup khi kết thúc, main thread không cần đợi
+>
+> Trong FTP server, chúng ta dùng `detach()` vì:
+> - Main thread cần tiếp tục `accept()` client mới ngay lập tức
+> - Không cần đợi client cũ ngắt kết nối
+
+---
+
+## 📌 NHÓM 3: CÂU HỎI VỀ FTP PROTOCOL
+
+### **Câu 10: FTP response code có quy tắc gì?**
+
+**Trả lời:**
+> Mã phản hồi FTP gồm **3 chữ số**, chữ số đầu cho biết loại:
+>
+> | Chữ số đầu | Ý nghĩa |
+> |------------|---------|
+> | **1xx** | Positive Preliminary (đang xử lý) |
+> | **2xx** | Positive Completion (thành công) |
+> | **3xx** | Positive Intermediate (cần thêm thông tin) |
+> | **4xx** | Transient Negative (lỗi tạm thời) |
+> | **5xx** | Permanent Negative (lỗi vĩnh viễn) |
+>
+> Ví dụ: `230` = thành công, `530` = lỗi vĩnh viễn (sai mật khẩu)
+
+---
+
+### **Câu 11: Tại sao FTP cần 2 kết nối (Control + Data)?**
+
+**Trả lời:**
+> - **Control Connection (port 21/2121)**: Gửi lệnh và nhận response
+> - **Data Connection (port ngẫu nhiên)**: Truyền nội dung file, listing
+>
+> **Lý do tách riêng:**
+> - Có thể gửi lệnh trong khi đang truyền file (ví dụ: ABORT để hủy)
+> - Control connection luôn mở, data connection mở/đóng theo từng lệnh
+> - Thiết kế từ những năm 1970, khi băng thông hạn chế
+
+---
+
+### **Câu 12: PASV mode hoạt động như thế nào?**
+
+**Trả lời:**
+> **Passive Mode (PASV):**
+> 1. Client gửi `PASV` qua control connection
+> 2. Server mở port ngẫu nhiên (ví dụ: 20020) và trả về: `227 (127,0,0,1,78,52)`
+>    - IP: 127.0.0.1
+>    - Port: 78 × 256 + 52 = 20020
+> 3. Client **chủ động kết nối** đến port 20020
+> 4. Sau đó mới gửi LIST/RETR/STOR
+>
+> **Tại sao dùng PASV thay vì Active mode?**
+> - Client thường sau NAT/firewall, không thể nhận kết nối từ bên ngoài
+> - PASV để client chủ động connect, dễ đi qua firewall hơn
+
+---
+
+## 📌 NHÓM 4: CÂU HỎI VỀ BẢO MẬT
+
+### **Câu 13: Path Traversal Attack là gì? Cách phòng chống?**
+
+**Trả lời:**
+> **Path Traversal** là tấn công dùng `..` để truy cập file ngoài thư mục được phép.
+>
+> Ví dụ: User có home `/data/user1`, gửi `CWD ../../etc/passwd` → đọc file hệ thống!
+>
+> **Phòng chống trong code:**
+> ```c
+> // 1. Chặn CWD .. khi đang ở root
+> if (strcmp(arg, "..") == 0 && strcmp(current_dir, "/") == 0) {
+>     return "550 Permission denied";
+> }
+>
+> // 2. Mọi path đều ghép với root_dir
+> full_path = root_dir + current_dir + filename;
+> // Không bao giờ truy cập trực tiếp path từ client
+> ```
+
+---
+
+### **Câu 14: Tại sao ẩn password trong log?**
+
+**Trả lời:**
+> - **Bảo mật**: Nếu ai đọc được file log, sẽ biết password
+> - **Compliance**: Các chuẩn bảo mật (PCI-DSS, GDPR) yêu cầu không lưu password dạng plaintext
+> - **Best practice**: Log chỉ cần biết "có lệnh PASS", không cần biết giá trị
+>
+> Code:
+> ```c
+> if (strncasecmp(cmd, "PASS ", 5) == 0) {
+>     log("PASS ****");  // Thay password bằng ****
+> }
+> ```
+
+---
+
+### **Câu 15: FTP có an toàn không? Làm sao để bảo mật hơn?**
+
+**Trả lời:**
+> FTP cơ bản **KHÔNG an toàn** vì:
+> - Username/password gửi dạng **plaintext** (có thể bắt gói tin)
+> - Dữ liệu file cũng không mã hóa
+>
+> **Giải pháp:**
+> - **FTPS** (FTP over SSL/TLS): Mã hóa bằng SSL certificate
+> - **SFTP** (SSH File Transfer Protocol): Chạy trên SSH, bảo mật hơn
+> - Trong đồ án này, em chưa implement SSL vì độ phức tạp cao
+
+---
+
+## 📌 NHÓM 5: CÂU HỎI VỀ CODE CỤ THỂ
+
+### **Câu 16: `strcasecmp()` khác gì `strcmp()`?**
+
+**Trả lời:**
+> - `strcmp()`: So sánh **phân biệt** hoa thường ("USER" ≠ "user")
+> - `strcasecmp()`: So sánh **không phân biệt** hoa thường ("USER" = "user" = "User")
+>
+> FTP protocol quy định lệnh **không phân biệt** hoa thường, nên dùng `strcasecmp()`.
+
+---
+
+### **Câu 17: Tại sao dùng `strncpy()` thay vì `strcpy()`?**
+
+**Trả lời:**
+> - `strcpy()`: Copy không giới hạn → **buffer overflow** nếu source dài hơn destination
+> - `strncpy()`: Copy tối đa n ký tự → an toàn hơn
+>
+> ```c
+> char dest[50];
+> strncpy(dest, source, sizeof(dest) - 1);
+> dest[sizeof(dest) - 1] = '\0';  // Đảm bảo null-terminated
+> ```
+>
+> **Lưu ý:** `strncpy()` không tự thêm `\0` nếu source >= n, nên phải thêm thủ công.
+
+---
+
+### **Câu 18: `recv()` trả về 0 nghĩa là gì?**
+
+**Trả lời:**
+> - `recv() > 0`: Nhận được n bytes dữ liệu
+> - `recv() == 0`: Client **đã đóng kết nối** (gọi `close()` hoặc CTRL+C)
+> - `recv() < 0`: Có **lỗi** (kiểm tra `errno`)
+>
+> Trong code:
+> ```c
+> int bytes = recv(sock, buffer, size, 0);
+> if (bytes <= 0) {
+>     // Client đóng kết nối hoặc lỗi → thoát vòng lặp
+>     break;
+> }
+> ```
+
+---
+
+## 📌 NHÓM 6: CÂU HỎI MỞ RỘNG
+
+### **Câu 19: Nếu có 1000 client kết nối cùng lúc thì sao?**
+
+**Trả lời:**
+> **Vấn đề:**
+> - Mỗi thread tốn ~2MB stack memory → 1000 thread = 2GB RAM
+> - Context switching nhiều thread làm giảm hiệu năng
+>
+> **Giải pháp thực tế:**
+> - Dùng **Thread Pool**: Tạo sẵn N threads, tái sử dụng
+> - Dùng **I/O Multiplexing**: `select()`, `poll()`, `epoll()` - 1 thread xử lý nhiều socket
+> - Dùng **Async I/O**: libevent, libuv
+>
+> Đồ án này dùng 1 thread/client cho đơn giản, phù hợp với số lượng client nhỏ.
+
+---
+
+### **Câu 20: Có thể dùng ngôn ngữ khác thay vì C không?**
+
+**Trả lời:**
+> **Có**, nhưng mỗi ngôn ngữ có ưu/nhược:
+>
+> | Ngôn ngữ | Ưu điểm | Nhược điểm |
+> |----------|---------|------------|
+> | **C** | Hiệu năng cao, hiểu sâu hệ thống | Dễ lỗi memory, phức tạp |
+> | **Python** | Dễ viết, thư viện socket có sẵn | Chậm hơn C |
+> | **Go** | Goroutines nhẹ, xử lý concurrent tốt | Ít phổ biến |
+> | **Rust** | An toàn bộ nhớ, hiệu năng như C | Học khó |
+>
+> Chọn C vì môn học yêu cầu và để hiểu sâu về hệ thống.
+
+---
+
+# 📋 TÀI LIỆU KỸ THUẬT CHI TIẾT
+
+> Phần dưới đây là **tài liệu kỹ thuật chi tiết** với code và giải thích từng dòng.
+
+---
+
 ## Tổng Quan
 
 Script này mô tả chi tiết flow xử lý của FTP Server, bao gồm:
@@ -13,6 +828,8 @@ Script này mô tả chi tiết flow xử lý của FTP Server, bao gồm:
 3. **Control Connection** - Quản lý phiên làm việc và xử lý lệnh FTP
 
 ---
+
+
 
 ## 1. Server Core - Khởi Động và Socket Setup
 
